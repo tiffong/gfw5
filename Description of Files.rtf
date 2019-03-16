@@ -1,0 +1,214 @@
+{\rtf1\ansi\ansicpg1252\cocoartf1561\cocoasubrtf200
+{\fonttbl\f0\fswiss\fcharset0 Helvetica;\f1\fnil\fcharset0 Menlo-Regular;}
+{\colortbl;\red255\green255\blue255;\red196\green26\blue22;\red255\green255\blue255;\red28\green0\blue207;
+}
+{\*\expandedcolortbl;;\csgenericrgb\c77000\c10200\c8600;\csgenericrgb\c100000\c100000\c100000;\csgenericrgb\c11000\c0\c81000;
+}
+\margl1440\margr1440\vieww18660\viewh11980\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0  
+\fs48 Folders
+\fs24 \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\fs30 \cf0 \
+
+\b \ul FIGURES
+\b0 : Contains all graphs
+\b\fs24 \ulnone \
+
+\b0 	
+\b\fs30 \ul Effort_and_Difference\ulnone :
+\fs24  
+\b0 Heat graphs of different MPAS. Shows 1 year before, 1 year after, 	and change. Also contains heat maps made with different degrees of resolution.\
+
+\b \
+	
+\fs30 \ul EEZs_4YEAR
+\b0\fs24 \ulnone : Line graphs of all 23 control EEZs. Monthly fishing by month over 4 years (2014-2018)\
+
+\b 		eezs_plotted_together
+\b0 : graph of small, medium, med-large, large, Xlarge EEZs 
+\b \
+\
+	
+\fs30 \ul monthly_scatterplot
+\b0\fs24 \ulnone : Graphs of monthly fishing effort 1 year before and 1 year after MPA creation. One graph per 	MPA.\
+		
+\b monthly_control: 
+\b0 Graph of all MPAs\'92 monthly fishing effort, controlled by area.
+\b \
+		monthly_cumulative: 
+\b0 Graph of all MPAs\'92 monthly fishing effort, not controlled by area.\
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\b\fs30 \cf0 \ul \ulc0 	MPA_vs_top_fishers
+\b0\fs24 \ulnone : plots MPA fishing as well as top/bottom 25% of fishers . X axis is year before and year after MPA creation.\
+\
+
+\b\fs30 \ul 	Old Figures:\
+		Old - Old - Control Sites sorted by MPA
+\fs24 \ulnone  
+\b0 Each graph represents monthly fishing effort of 1 MPA and its adjacent EEZs. X axis dates from 1 year before MPA creation to 1 year after. These were created as a first step before we decided to put all control EEZs on the same graph.  
+\b \
+		\
+
+\fs30 \ul 		Old Individual Boat analysis
+\b0 :
+\fs24 \ulnone   Back when we were analyzing individual boats. \
+			
+\b Individual Boats total effort plotted together: 
+\b0 Graphed the monthly effort of individual boats (top 10) 1 year before and after MPA creation
+\b \
+			Individual boats plotted with how much they fished within MPA
+\b0 : Graphed individual total effort of top 10 boats in PIPA as well as how much they fished 	within PIPA
+\b \
+			test
+\b0 : old figures of effort and difference that didn\'92t work.
+\b 	\
+\
+	
+\fs30 \ul Redistribution heat map
+\b0\fs24 \ulnone : Heat maps of where top percentage of boats fished a year before and after. \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \ul \
+
+\fs48 \ulnone **********************************************************************
+\fs24 \ul \
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\b\fs30 \cf0 S
+\b0 : Contains all RStudio files
+\fs24 \ulnone \
+	
+\b\fs30 \ul Control line graphs
+\fs24 :\ulnone  
+\b0 Line graphs of monthly fishing for control EEZs
+\b \
+		get 2014-2018 Rdata of all EEZs
+\b0 : Gets and saves Rdata from control EEZs using EEZ 		number
+\b . 
+\b0 Can save data from 1 year or 4 years.
+\b \
+\
+		2014-2018 time series ALL EEZS
+\b0 : Plots monthly fishing effort from 2014-2018 of all 23 		control EEZs. Saves into 
+\f1\fs22 \cf2 \cb3 data/monthly_effort_CONTROL_4YEAR/
+\f0\fs24 \cf0 \cb1 \
+
+\b \
+		plot 1 EEZ from Rdata.R
+\b0 : Given a geo-name (ex. Tuvuluan Exclusive Economic Zone), will plot the this EEZ\'92s monthly fishing effort on a 4 year graph. Created because running the query on all 23 control EEZs failed to save the plots and only saved the Rdata. Saves into 
+\f1\fs22 \cf2 \cb3 ../data/monthly_effort_CONTROL_4YEAR/
+\f0\fs24 \cf0 \cb1 \
+
+\b \
+\
+	
+\fs30 \ul Heat maps\ulnone \
+
+\fs24 		Fishing Effort and Difference Heat Map:
+\b0  Allows you to make year before, year after, change heat map.
+\b \
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\fs30 \cf0 	\ul Top Fishers
+\fs24 \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \ulnone 		get top fishers data
+\b0 : Gets total fishing inside and outside MPA for the top and bottom 25% of boats who fish in a certain MPA a year before closure. Gets their fishing (added up) on a monthly scale before and after MPA creation. Plots their added effort a year before and after MPA creation. Saves into 
+\f1\fs22 \cf2 \cb3 "../data/individual_aggregate_scatterplot/"
+\f0\fs24 \cf0 \cb1 \
+Can also plot graphs for top 25%.
+\b \
+\
+	
+\fs30 \ul Monthly line graphs (year before/after)
+\fs24 \ulnone \
+		MPAs Monthly Fishing Effort on the same graph
+\b0 : Put all the monthly MPA fishing graphs on the same graph\
+
+\b 		Controlling by area
+\b0 : Divides graph above by area of each MPA (plot)s
+\b \
+		MPA Monthly Fishing Effort
+\b0 : Gets 1 plot of monthly fishing before and after MPA creation
+\b \
+		MPA Monthly vs Top Fishers:
+\b0  Gets and plots monthly effort a year before and after MPA creation as well as 		monthly effort of top fishers
+\b \
+		MPA Monthly Fishing Ross Sea Only
+\b0 : 1 plot of monthly fishing of Ross Sea. There is a distinct way to get 		effort for this MPA.
+\b \
+	
+\fs30 \ul Previous code
+\b0\fs24 \ulnone : Various other coding pieces
+\b \
+		CONTROL MONTHLY ON SAME GRAPH 1 YEAR
+\b0 : Old graph. Allows you to plot monthly graph of MPA along 		with its adjacent. control EEZs. We are using this now, so may be necessary to move this to our main folder.
+\b \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardeftab543\pardirnatural\partightenfactor0
+\cf0 		Individual Effort on the same graph
+\b0 : Old. Plots individual boats\'92 effort before and after MPA creation. In this case we took the effort of the top 10 fishers in PIPA. This was used to help see patterns of individual boats.
+\b \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \
+	
+\fs30 \ul Redistribution heat map
+\fs24 \ulnone \
+		get Redistribution data for heat map
+\b0 : Gets total effort of top 25% and bottom 25% of fishers who fished the most in an MPA a year before closure. Gets data from 1 year before and after MPA creation. Can also plot. Saves Rdata in 
+\f1\fs22 \cf2 \cb3 "../data/Redistribution/"
+\f0\fs24 \cf0 \cb1 \
+
+\b \
+		plot Redistribution loading saved data
+\b0 : Plots before and after heat map based on  loaded R data of redistribution. Saves plot in 
+\f1\fs22 \cf4 \cb3 ../Figures/Redistribution/
+\f0\fs24 \cf0 \cb1 \
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+\cf0 \ul \
+
+\fs48 \ulnone **********************************************************************
+\fs24 \ul \
+\
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\b\fs30 \cf0 DATA
+\b0 : Contains all saved Data (monthly fishing effort data.frames. etc)\
+	
+\b Monthly_effort_scatterplot
+\b0 : 
+\fs24 \ulnone monthly effort for each MPA 1 year before and after creation
+\b\fs30 \ul \
+	Monthly_effort_Control_4Year
+\b0 : 
+\fs24 \ulnone monthly effort for all control EEZs. 4 years of data (2014-2018)
+\b\fs30 \ul \
+	monthly_effort_control
+\b0\fs24 \ulnone : old. Using control EEZs based on proximity to MPA, plotted graphs of 1 year before and after MPA creation
+\b\fs30 \ul \
+	individual_aggregate_scatterplot: 
+\b0\fs24 \ulnone Data for effort a year before and after MPA creation for top% of fishers.
+\b\fs30 \ul \
+	Redistribution
+\b0\fs24 \ulnone  Data for redistribution of top% of boats in different MPAs
+\b\fs30 \ul \
+	BeforeAfterEffort
+\b0\fs24 \ulnone  Data for each MPA on effort before and after MPA creation. For heat maps.
+\b\fs30 \ul \
+	individual_effort_scatterplot
+\b0\fs24 \ulnone  Old. For single boats within PIPA data of their fishing patterns.
+\b\fs30 \ul \
+	monthly_effort_scatterplot_Unusable_mpas
+\b0\fs24 \ulnone  Monthly effort of MPAs that we aren\'92t using anymore. 
+\b\fs30 \ul \
+	World_EEZ_v9_20161021_LR
+\b0\fs24 \ulnone  EEZ shape files are stored here
+\fs30 \ul \
+\
+}
