@@ -14,6 +14,7 @@ library(maptools)
 library(raster)
 library(leaflet)
 
+
 # Download shapefile from www.naturalearthdata.com
 
 # Download countries data
@@ -28,7 +29,7 @@ NE_countries <- readOGR(dsn = "gallery/ne_110m_admin_0_countries", layer = "ne_1
 class(NE_countries) # is a SpatialPolygonsDataFrame object
 
 ##get shapefiles for MPA - TAKES THE MOST TIME - about 2 mins 16 seconds bruh
-mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_June2018_marine-shapefile-polygons")
+mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_Apr2019_marine-shapefile-polygons")
 
 #Get MPA shapefiles
 
@@ -268,7 +269,7 @@ Country.DT=Country.DT[Country.DT$lat < 78 ,]
 
 #png(filename="../Figures/Final_Figures/Figure1transparentfill.5.png",
 #    units="in", width=4, height=4, res=300)
-
+quartz()
 ggplot() + 
   geom_polygon(data = Country.DT, # add projected countries
                aes(x = X, y = Y, group = group), 
