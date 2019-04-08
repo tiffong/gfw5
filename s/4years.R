@@ -1,7 +1,7 @@
 #4 YEAR CONTROL EEZS, AREA CONTROLLED ON SAME GRAPH
 
 #libraries -----
-setwd('/Users/tiffanyong/Documents/GitHub/gfw4/s')
+setwd('/Users/tiffanyong/Documents/GitHub/gfw5/s')
 library(sf)
 library(mregions)
 library(DBI)

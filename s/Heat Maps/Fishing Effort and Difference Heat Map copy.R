@@ -1,6 +1,6 @@
 #libraries -------------
 #setwd('/Users/tiffanyong/Desktop/backup_gfw/backupgfw2/s')
-setwd('/Users/tiffanyong/Documents/GitHub/GFW3/s')
+setwd('/Users/tiffanyong/Documents/GitHub/GFW5/s')
 library(sf)
 library(mregions)
 library(DBI)
@@ -38,18 +38,18 @@ library(lubridate)
 
 #######INITIALIZING########
 #get shapefiles for EEZ - TAKES TIME
-eez <- readOGR(dsn = "/Users/tiffanyong/Documents/GitHub/gfw/data/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
+eez <- readOGR(dsn = "/Users/tiffanyong/Desktop/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
 eez@data = eez@data[which(is.na(eez@data$Sovereign1) == F),] # remove a single NA value for disputed Chinese land, is this necessary
 
 #get shapefiles for MPA - TAKES THE MOST TIME - about 2 mins 16 seconds bruh
-mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_June2018_marine-shapefile-polygons")
+mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_Apr2019_marine-shapefile-polygons")
 
 ###########################
 
 #SET TERRITORY,MPA NAME,AND CREATION DATE HERE
-creation_date = '2015-01-01'
-territory = 'Phoenix Group'
-mpa_name = 'Phoenix Islands Protected Area'
+creation_date = '2016-09-15'
+territory = 'Micronesia'
+mpa_name = 'Federated States of Micronesia Government'
 
 curr_mpa = mpa[mpa@data$ORIG_NAME == mpa_name, ] 
 
@@ -406,7 +406,7 @@ for(k in 1:2) {
     viridis::scale_fill_viridis(name = "Fishing hours" ,
                                 trans = "log",
                                 breaks = scales::log_breaks(n = 10, base = 4))+
-    hrbrthemes::theme_ipsum()+
+    #hrbrthemes::theme_ipsum()+
     labs(title = graph_title,
          subtitle = subtitles[[k]],
          y = "",
@@ -416,10 +416,10 @@ for(k in 1:2) {
           plot.title = element_text(size = 12, hjust = 0),
           plot.subtitle = element_text(size = 10, hjust = 0),
           plot.margin = margin(10,0,0,0),
-          legend.margin = margin(5,5,20,0))+
+          legend.margin = margin(5,5,20,0))
     
 #for pipa only -----------    
-    scale_x_discrete(breaks = c(-178,-173, -168))
+    #scale_x_discrete(breaks = c(-178,-173, -168))
     #scale_x_discrete(breaks = c(-134,-130, -125,-120))
 }
 

@@ -1,11 +1,7 @@
 #libraries -------------
 #setwd('/Users/tiffanyong/Desktop/backup_gfw/backupgfw2/s')
-<<<<<<< HEAD
-#setwd('/Users/tiffanyong/Documents/GitHub/gfw4/s')
-setwd('/Users/tiffanyong/Documents/GitHub/gfw4/Figures/Individual_plots_samemargin')
-=======
-setwd('/Users/tiffanyong/Documents/GitHub/GFW3/s')
->>>>>>> parent of 12a0692... more figures
+
+setwd('/Users/tiffanyong/Documents/GitHub/GFW5/s')
 library(sf)
 library(mregions)
 library(DBI)
