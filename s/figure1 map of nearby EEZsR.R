@@ -32,7 +32,7 @@ mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_
 
 
 #get shapefiles for EEZ - TAKES TIME
-eez <- readOGR(dsn = "/Users/tiffanyong/Documents/GitHub/gfw/data/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
+eez <- readOGR(dsn = "/Users/tiffanyong/Documents/GitHub/gfw5/data/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
 eez@data = eez@data[which(is.na(eez@data$Sovereign1) == F),] # remove a single NA value for disputed Chinese land, is this necessary
 
 
@@ -356,6 +356,7 @@ Country.DT=Country.DT[Country.DT$lat < 78 ,]
 #png(filename="../Figures/Final_Figures/Figure1transparentfill.5.png",
 #    units="in", width=4, height=4, res=300)
 
+quartz()
 ggplot() + 
   geom_polygon(data = Country.DT, # add projected countries
                aes(x = X, y = Y, group = group), 
@@ -379,9 +380,9 @@ ggplot() +
   ) +
   geom_polygon(data = Pipa.DT, #PIPA
                aes(x = X, y = Y, group = group),
-               fill = 'red',
+               fill = 'darkgoldenrod2',
                #alpha=0.3,
-               col = "red",
+               col = "darkgoldenrod2",
                size = .5
   ) +
   geom_polygon(data = pri.DT, #pri 
@@ -493,8 +494,8 @@ plotclr <- c("red","yellow", "darkgreen")
 #dev.off()
 
 # Save as png and pdf file
-#ggsave("gallery/Pacific centered world map with ggplot.png", 
-#       width=15, height=8, units="cm", dpi=75)
+ggsave("gallery/Pacific centered world map with ggplot.png", 
+       width=15, height=8, units="in", dpi=300)
 
 #ggsave("gallery/Pacific centered world map with ggplot.pdf", 
 #       width=15, height=8, units="cm")
