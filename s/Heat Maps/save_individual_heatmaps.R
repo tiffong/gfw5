@@ -39,18 +39,18 @@ library(lubridate)
 
 #######INITIALIZING########
 #get shapefiles for EEZ - TAKES TIME
-eez <- readOGR(dsn = "/Users/tiffanyong/Documents/GitHub/gfw/data/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
+eez <- readOGR(dsn = "/Users/tiffanyong/Documents/GitHub/gfw5/data/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
 eez@data = eez@data[which(is.na(eez@data$Sovereign1) == F),] # remove a single NA value for disputed Chinese land, is this necessary
 
 #get shapefiles for MPA - TAKES THE MOST TIME - about 2 mins 16 seconds bruh
-mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_June2018_marine-shapefile-polygons")
+mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_Apr2019_marine-shapefile-polygons")
 
 ###########################
 
 #SET TERRITORY,MPA NAME,AND CREATION DATE HERE
-creation_date = '2016-08-24'
-territory = 'Islas San Félix and San Ambrosio'
-mpa_name = 'Nazca-Desventuradas'
+creation_date = '2015-01-01'
+territory = 'Phoenix Group'
+mpa_name = 'Phoenix Islands Protected Area'
 
 curr_mpa = mpa[mpa@data$ORIG_NAME == mpa_name, ] 
 
