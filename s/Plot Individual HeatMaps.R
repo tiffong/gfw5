@@ -5,13 +5,13 @@ library(sf)
 library(mregions)
 library(DBI)
 library(bigrquery)
-devtools::install_github("hrbrmstr/hrbrthemes")
+#devtools::install_github("hrbrmstr/hrbrthemes")
 library(hrbrthemes)
 library(ggsci)
 library(tidyverse) #loads dplyr and friends
 require(ggplot2) #there is no package called ggplot
 library(hrbrthemes)
-instlibrary(viridisLite)
+#instlibrary(viridisLite)
 library(rgdal)
 library(dplyr)
 require(dplyr)
@@ -45,45 +45,7 @@ eez@data = eez@data[which(is.na(eez@data$Sovereign1) == F),] # remove a single N
 #get shapefiles for MPA - TAKES THE MOST TIME - about 2 mins 16 seconds bruh
 mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_Apr2019_marine-shapefile-polygons")
 
-###########################
 
-#SET TERRITORY,MPA NAME,AND CREATION DATE HERE
-creation_date = '2016-08-24'
-territory = 'Islas San Félix and San Ambrosio'
-mpa_name = 'Nazca-Desventuradas'
-
-curr_mpa = mpa[mpa@data$ORIG_NAME == mpa_name, ] 
-curr_eez = eez[eez@data$Territory1 == territory,] # get a specific EEZ
-
-
-########VISUALIZE SHAPEFILE#######
-
-leaflet() %>%
-  addTiles() %>%
-  addPolygons(data = curr_mpa, color ="green") %>%
-  #addPolygons(data = mpa_before, color = "blue") 
-  #%>%
-  addPolygons(data = curr_eez, color = "blue") 
-
-###############################
-
-
-#transform shapefile into sf object for plotting 
-curr_mpa <- curr_mpa %>% 
-  sf::st_as_sf() 
-print('mpa as sf')
-
-if(territory != 'Hawaii') {
-  print('eez as sf')
-  curr_eez <- curr_eez %>% 
-    sf::st_as_sf() 
-}
-
-if(territory == "Hawaii") {
-  print('mpa_before')
-  mpa_before <- mpa_before %>% 
-    sf::st_as_sf() 
-}
 
 ####LOAD  RDATA########################
 
@@ -109,20 +71,172 @@ for(i in 3:len) {
 View(Rdata)
 View(names)
 
+
+###########################
+
+#NAZCA(1) DONE
+#PRI(2)  
+#PAPA(3) 
+#PIPA(4) DONE
+#PITCAIRN(5)DONE
+
+##CHANGE INDEX HERE####
+index = 4
+
+
+#SET TERRITORY,MPA NAME
+if(index ==1 ) {
+  territory = 'Islas San Félix and San Ambrosio'
+  mpa_name = 'Nazca-Desventuradas'
+  sizing = 'small'
+
+}
+if(index==2){
+  mpa_name = 'Pacific Remote Islands'
+  index = 2
+  sizing = 'large'
+  territory = ''
+  
+
+}
+if(index == 3) {
+  mpa_name = 'Papahānaumokuākea Marine National Monument'
+  territory = 'Hawaii'
+  mpa_before = mpa[mpa@data$ORIG_NAME == 'Papahānaumokuākea', ]
+  sizing = 'large'
+  
+}
+if(index == 4) {
+  mpa_name = 'Phoenix Islands Protected Area'
+  territory = 'Phoenix Group'
+  sizing = 'large'
+  
+}
+if( index == 5) {
+  mpa_name = 'Pitcairn Islands Marine Reserve'
+  territory = 'Pitcairn'
+  sizing = 'large'
+ 
+}
+
+
+
+###first thing to do is get shapefiles
+
+curr_mpa = mpa[mpa@data$ORIG_NAME == mpa_name, ] 
+curr_eez = eez[eez@data$Territory1 == territory,] # get a specific EEZ
+if (mpa_name ==  'Pacific Remote Islands') {
+  curr_eez = eez[eez@data$MRGID_Sov1 == 2204,]
+  curr_eez = curr_eez[curr_eez@data$ISO_Ter1 == "UMI",]  
+  curr_eez = curr_eez[!(curr_eez@data$Territory1 %in% c("Wake Island", "Jarvis Island", "Johnston Atoll")),]
+  
+}
+
+
+#BRING THE POLYGON TOGETHER IF IT IS SEPARATED BY THE 180 LINE
+if (territory == "Hawaii") { #wraps it at the 0
+  curr_mpa = spTransform(curr_mpa, CRS("+proj=longlat +datum=WGS84 +lon_wrap=180"))
+  curr_eez = spTransform(curr_eez, CRS("+proj=longlat +datum=WGS84 +lon_wrap=180"))
+  mpa_before = spTransform(mpa_before, CRS("+proj=longlat +datum=WGS84 +lon_wrap=180"))
+} else if (mpa_name == "Pacific Remote Islands") {
+  print('transforming PRI shpefiles')
+  curr_mpa = spTransform(curr_mpa, CRS("+proj=longlat +datum=WGS84 +lon_wrap=180"))
+  curr_eez = spTransform(curr_eez, CRS("+proj=longlat +datum=WGS84 +lon_wrap=180"))
+}
+
+########VISUALIZE SHAPEFILE#######
+
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = curr_mpa, color ="green") %>%
+  #addPolygons(data = mpa_before, color = "blue") 
+  #%>%
+  addPolygons(data = curr_eez, color = "blue") 
+
+###############################
+
+
+
+#transform shapefile into sf object for plotting 
+curr_mpa <- curr_mpa %>% 
+  sf::st_as_sf() 
+print('mpa as sf')
+
+if(territory != 'Hawaii') {
+  print('eez as sf')
+  curr_eez <- curr_eez %>% 
+    sf::st_as_sf() 
+}
+
+if(territory == "Hawaii") {
+  print('mpa_before')
+  mpa_before <- mpa_before %>% 
+    sf::st_as_sf() 
+}
+
+
+
+
+
 ####load data locally####
-binned_effort = Rdata[[1]][[1]]
+binned_effort = Rdata[[index]][[1]]
+binned_effort2 = Rdata[[index]][[2]]
+binned_effort3 = Rdata[[index]][[3]]
+
+
+
+###180 line transformations
+if(territory=="Hawaii" || mpa_name=="Pacific Remote Islands") {
+  yo = binned_effort
+  yo$lon2 = with(yo,ifelse(lon_bin_center<0, 180+lon_bin_center,lon_bin_center-180))
+  yo2 = yo[,c("lat_bin_center","lon2","fishing_hours")]
+  names(yo2)[2]<-"lon_bin_center"
+  binned_effort = yo2
+}
+if(territory=="Hawaii" || mpa_name=="Pacific Remote Islands") {
+  yo = binned_effort2
+  yo$lon2 = with(yo,ifelse(lon_bin_center<0, 180+lon_bin_center,lon_bin_center-180))
+  yo2 = yo[,c("lat_bin_center","lon2","fishing_hours")]
+  names(yo2)[2]<-"lon_bin_center"
+  binned_effort2 = yo2
+}
+if(territory=="Hawaii" || mpa_name=="Pacific Remote Islands") {
+  yo = binned_effort3
+  yo$lon2 = with(yo,ifelse(lon_bin_center<0, 180+lon_bin_center,lon_bin_center-180))
+  yo2 = yo[,c("lat_bin_center","lon2","fishing_hours")]
+  names(yo2)[2]<-"lon_bin_center"
+  binned_effort3 = yo2
+}
+
+#change shapefiles
+if(territory == "Hawaii" ) {
+  print('transforming hawaii shapefiles')
+  b2 = curr_mpa$geometry + c(-180, 0)         
+  b3 = mpa_before$geometry + c(-180.4, -0.26)
+  curr_mpa = b2
+  curr_eez = b3
+  
+} else if (mpa_name == 'Pacific Remote Islands') {
+  print('transforming pacific remote shapefiles')
+  b2 = curr_mpa$geometry + c(-180, 0) 
+  b3 = curr_eez$geometry + c(-180, 0) 
+  curr_mpa = b2
+  curr_eez = b3
+  
+}
+
+
 #View(binned_effort)
 
 effortPlot = list()
+setwd('/Users/tiffanyong/Documents/GitHub/GFW5/Figures/test')
+
+#############################################
+########         PLOTTING    ################
+#############################################
 
 ###############PLOT 1----------------
 
-if(territory=="Hawaii" || mpa_name=="Pacific Remote Islands") {
-  yo = binned_effort[[1]]
-  yo$lon2 = with(yo,ifelse(lon_bin_center<0, 180+lon_bin_center,lon_bin_center-180))
-  yo2 = yo[,c("lat_bin_center","lon2","fishing_hours")]
-}
-#change to yo2 instad of binned_effort[[k]] for Hawaii or PRI-----
 effortPlot[[1]] = binned_effort %>% 
   filter(fishing_hours > 1) %>% 
   ungroup() %>% 
@@ -142,6 +256,7 @@ effortPlot[[1]] = binned_effort %>%
   ) +
   viridis::scale_fill_viridis(name = "Fishing hours" ,
                               trans = "log",
+                              limits=c(NA, 1024),
                               breaks = scales::log_breaks(n = 6, base = 4))+
   #hrbrthemes::theme_ipsum()+
   theme_minimal()+
@@ -149,15 +264,37 @@ effortPlot[[1]] = binned_effort %>%
     #subtitle = subtitles[[k]],
     y = "",
     x = "")+
-  theme(axis.text.x = element_text(size = 11),
-        axis.text.y = element_text(size = 11))#,
+  theme(axis.text.x = element_text(size = 32),
+        axis.text.y = element_text(size = 32),
+        legend.position="none"
+  ) +
         #plot.title = element_text(size = 18, hjust = 0),
         #plot.subtitle = element_text(size = 16, hjust = 0),
         #plot.margin = margin(10,0,0,0),
         #legend.margin = margin(5,5,20,0))
+  
+#for papa only
+  if (territory == "Hawaii") {
+    scale_x_continuous(  breaks =seq(-2,20,2) )
+  } 
+if (territory == "") {
+  scale_x_continuous( breaks =seq(-20,24,2) )
+} 
+  
 
-quartz()
+
+
+
+#quartz()
 effortPlot[[1]]
+
+title = paste(mpa_name, '1', '.png', sep = " ", collapse = NULL)
+if(sizing == 'large'){
+  ggsave(title, width = 11, height = 10)
+} else {
+  ggsave(title, width = 10, height = 10)
+}
+
 
 
 
@@ -173,13 +310,9 @@ effortPlot[[1]]
 
 #PLOT 2----------------
 
-if(territory=="Hawaii" || mpa_name=="Pacific Remote Islands") {
-  yo = binned_effort[[2]]
-  yo$lon2 = with(yo,ifelse(lon_bin_center<0, 180+lon_bin_center,lon_bin_center-180))
-  yo2 = yo[,c("lat_bin_center","lon2","fishing_hours")]
-}
+
 #change to yo2 instad of binned_effort[[k]] for Hawaii or PRI-----
-effortPlot[[2]] = binned_effort[[2]] %>% 
+effortPlot[[2]] = binned_effort2 %>% 
   filter(fishing_hours > 1) %>% 
   ungroup() %>% 
   ggplot()+
@@ -198,33 +331,39 @@ effortPlot[[2]] = binned_effort[[2]] %>%
   ) +
   viridis::scale_fill_viridis(name = "Fishing hours" ,
                               trans = "log",
-                              breaks = scales::log_breaks(n = 10, base = 4))+
-  hrbrthemes::theme_ipsum()+
-  labs(title = graph_title,
+                              limits=c(NA, 1024),
+                              breaks = scales::log_breaks(n = 6, base = 4))+
+  #hrbrthemes::theme_ipsum()+
+  theme_minimal()+
+  labs(
        #subtitle = subtitles[[k]],
        y = "",
        x = "")+
-  theme(axis.text.x = element_text(size = 8),
-        axis.text.y = element_text(size = 8),
+  theme(axis.text.x = element_text(size = 40),
+        axis.text.y = element_text(size = 40),
+        legend.position="none"
         #plot.title = element_text(size = 18, hjust = 0),
         #plot.subtitle = element_text(size = 16, hjust = 0),
-        plot.margin = margin(10,0,0,0),
-        legend.margin = margin(5,5,20,0))
-#+
+        #plot.margin = margin(10,0,0,0),
+        #legend.margin = margin(5,5,20,0))
+  ) +
+  if (territory == "Hawaii") {
+    scale_x_continuous(  breaks =seq(-2,20,2) )
+  }
+
+effortPlot[[2]]
+title = paste(mpa_name, '2', '.png', sep = " ", collapse = NULL)
+if(sizing == 'large'){
+  ggsave(title, width = 14, height = 10)
+} else {
+  ggsave(title, width = 10, height = 10)
+}
+
 
 
 
 #for pipa only -----------    
-#scale_x_discrete(breaks = c(-178,-173, -168))
-#scale_x_discrete(breaks = c(-134,-130, -125,-120))
 
-quartz()
-effortPlot[[2]]
-
-
-#to see what it looks like
-quartz()
-grid.arrange(effortPlot[[1]], effortPlot[[2]], nrow=2)
 
 
 
@@ -234,33 +373,10 @@ grid.arrange(effortPlot[[1]], effortPlot[[2]], nrow=2)
 #scale---------------------------
 scale = viridis(100)[10:100]
 
-#name the file here
-file = paste(mpa_name, ' Effort and Difference', sep='')
-title = paste('../Figures/Effort_and_Difference/', file, '.png', sep = '')   
-
 #transform
-if(territory=='Hawaii' || mpa_name = "Pacific Remote Islands") {
-  yo = binned_effort[[3]]
-  yo$lon2 = with(yo,ifelse(lon_bin_center<0, 180+lon_bin_center,lon_bin_center-180))
-  yo2 = yo[,c("lat_bin_center","lon2","fishing_hours")]
-} else {
-  yo = binned_effort[[3]]
-}
+yo = binned_effort3
 
-#make extremes the same color for 180 mpas
-higher = 500
-lower = -higher
-#change yo2 to binned_effort[[3]]
-for(i in 1:nrow(yo2)) {
-  x=yo2$fishing_hours[i]
-  if(x < lower) {
-    yo2$fishing_hours[i] = lower
-  } else if (x > higher) {
-    yo2$fishing_hours[i] = higher
-  } 
-}
-
-#make extremes same color for normal MPAs
+#make extremes the same color for all mpas
 higher = 750
 lower = -higher
 for(i in 1:nrow(yo)) {
@@ -272,21 +388,6 @@ for(i in 1:nrow(yo)) {
   } 
 }
 
-#for pitcairn, make 150, nazca 250??
-higher = 250
-lower = -higher
-for(i in 1:nrow(yo)) {
-  x=yo$fishing_hours[i]
-  if(x < lower) {
-    yo$fishing_hours[i] = lower
-  } else if (x > higher) {
-    yo$fishing_hours[i] = higher
-  } 
-}
-
-#REAL CODE for effortplot 3 BELOW ------------------------------------
-#part1----------
-#change to yo2 if Hawaii, yo for regular mpas
 effortPlot[[3]] = yo %>%
   filter(abs(fishing_hours) > 1) %>% 
   ungroup() %>% 
@@ -304,52 +405,45 @@ effortPlot[[3]] = yo %>%
           linetype= 'dashed',
           size = 0.5
   ) +
-  
-  
   # SCALE PART HERE ------ 
 scale_fill_gradient2(name="Difference", low = "blue", mid="white", high = "red" ,
-
                      limits = c(-750,750),
                      breaks=seq(-750,750,250)
 
 )+
   #part3----
-hrbrthemes::theme_ipsum()+
+#hrbrthemes::theme_ipsum()+
+theme_minimal()+
   labs(#title = "After-Before Difference",
     #subtitle = paste(year_before_date, "to", year_after_date, sep= ' '),
     y = "",
     x = "")+
-  theme(axis.text.x = element_text(size = 8),
-        axis.text.y = element_text(size = 8),
-        plot.title = element_text(size = 18, hjust = 0),
-        plot.subtitle = element_text(size = 16, hjust = 0),
-        plot.margin = margin(10,0,0,0),
-        legend.margin = margin(5,5,20,0),
+  theme(axis.text.x = element_text(size = 32),
+        axis.text.y = element_text(size = 32),
+        legend.position="none",
+        #plot.title = element_text(size = 18, hjust = 0),
+        #plot.subtitle = element_text(size = 16, hjust = 0),
+        #plot.margin = margin(10,0,0,0),
+        #legend.margin = margin(5,5,20,0),
         panel.background=element_rect(fill = "white",
                                       colour = NA,
                                       size = 0.5, linetype = "solid")
-  ) #+
+  ) +
+  if (territory == "Hawaii") {
+    scale_x_continuous(  breaks =seq(-2,20,2) )
+  }
 #scale_x_discrete(breaks = c(-178,-173, -168))
 #scale_x_discrete(breaks = c(-134,-130, -125,-120))
 
-quartz() 
+#quartz() 
 effortPlot[[3]]
+title = paste(mpa_name, '3','.png', sep = " ", collapse = NULL)
+if(sizing == 'large'){
+  ggsave(title, width = 14, height = 10)
+} else {
+  ggsave(title, width = 10, height = 10)
+}
 
 
 
 
-
-#SAVE PLOT PICTURES TO FOLDER HERE ----------------
-#png('nazca1', units="in", width=4, height=4, res=300)
-#grid.arrange(effortPlot[[1]], nrow=1)
-#dev.off()
-
-ggsave("nazca3.png", width = 4, height = 4)
-
-png('notitle8', units="in", width=4, height=4, res=300)
-grid.arrange(effortPlot[[2]], nrow=1)
-dev.off()
-
-png('notitle9', units="in", width=4, height=4, res=300)
-grid.arrange(effortPlot[[3]], nrow=1)
-dev.off()
