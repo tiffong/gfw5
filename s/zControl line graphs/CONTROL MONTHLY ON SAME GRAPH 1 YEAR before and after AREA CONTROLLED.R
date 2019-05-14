@@ -1,5 +1,5 @@
 #libraries -----
-setwd('/Users/tiffanyong/Documents/GitHub/gfw4/s')
+setwd('/Users/tiffanyong/Documents/GitHub/gfw5/s')
 library(sf)
 library(mregions)
 library(DBI)
@@ -40,7 +40,8 @@ library(ggpubr)
 #plot------
 plots = list()
 thick = 0.5
-yax_size = 6
+yax_size = 12
+xax = 12
 
 ################PIPA PLOTTING
 
@@ -87,14 +88,14 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   labs(color="EEZ Name") +
   labs(x="Month" ,
        y=expression("Fishing Hours/1000" ~km^2),
-       title = "Phoenix Islands"
+       title = "Phoenix Islands Protected Area"
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
   ) +
   theme(plot.title = element_text(hjust = 0.5)) + #this does nothing
   theme_minimal() +
   geom_vline(aes(xintercept = 0, color='black'), color="black", size=0.5)+
-  theme(axis.text.x = element_text(size = 8),
+  theme(axis.text.x = element_text(size = xax),
         axis.text.y = element_text(size = yax_size),
         plot.title = element_text(size = 16, hjust = 0),
         plot.subtitle = element_text(size = 10, hjust = 0),
@@ -148,14 +149,14 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   labs(color="EEZ Name") +
   labs(x="Month", 
        y=expression("Fishing Hours/1000" ~km^2),
-       title = "Pitcairn Islands"
+       title = "Pitcairn Islands Marine Reserve"
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
   ) +
   theme(plot.title = element_text(hjust = 0.5)) + #this does nothing
   theme_minimal() +
   geom_vline(aes(xintercept = 0, color='black'), color="black", size=0.5)+
-  theme(axis.text.x = element_text(size = 8),
+  theme(axis.text.x = element_text(size = xax),
         axis.text.y = element_text(size = yax_size),
         plot.title = element_text(size = 16, hjust = 0),
         plot.subtitle = element_text(size = 10, hjust = 0),
@@ -230,14 +231,14 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   labs(color="EEZ Name") +
   labs(x="Month", 
        y=expression("Fishing Hours/1000" ~km^2) ,
-       title = "Papahānaumokuākea"
+       title = "Papahānaumokuākea MNM"
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
   ) +
   theme(plot.title = element_text(hjust = 0.5)) + #this does nothing
   theme_minimal() +
   geom_vline(aes(xintercept = 0, color='black'), color="black", size=0.5)+
-  theme(axis.text.x = element_text(size = 8),
+  theme(axis.text.x = element_text(size = xax),
         axis.text.y = element_text(size = yax_size),
         plot.title = element_text(size = 16, hjust = 0),
         plot.subtitle = element_text(size = 10, hjust = 0),
@@ -287,14 +288,14 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   labs(color="EEZ Name") +
   labs(x="Month", 
        y=expression("Fishing Hours/1000" ~km^2),
-       title = mpa_name
+       title = 'Pacific Remote Islands MNM'
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
   ) +
   theme(plot.title = element_text(hjust = 0.5)) + #this does nothing
   theme_minimal() +
   geom_vline(aes(xintercept = 0, color='black'), color="black", size=0.5)+
-  theme(axis.text.x = element_text(size = 8),
+  theme(axis.text.x = element_text(size = xax),
         axis.text.y = element_text(size = yax_size),
         plot.title = element_text(size = 16, hjust = 0),
         plot.subtitle = element_text(size = 10, hjust = 0),
@@ -341,14 +342,14 @@ plots[[5]] =
   labs(color="EEZ Name") +
   labs(x="Month", 
        y=expression("Fishing Hours/1000" ~km^2),
-       title = mpa_name
+       title = 'Nazca-Desventuradas Marine Park'
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
   ) +
   theme(plot.title = element_text(hjust = 0.5)) + #this does nothing
   theme_minimal() +
   geom_vline(aes(xintercept = 0, color='black'), color="black", size=0.5)+
-  theme(axis.text.x = element_text(size = 8),
+  theme(axis.text.x = element_text(size = xax),
         axis.text.y = element_text(size = yax_size),
         plot.title = element_text(size = 16, hjust = 0),
         plot.subtitle = element_text(size = 10, hjust = 0),
@@ -362,7 +363,7 @@ plots[[5]] =
 #gridarrange----
 #quartz()
 
-png(filename="../Figures/Final_Figures/Figure3WithTitle.png",
+png(filename="../Figures/Final_Figures/Figure3WithTitle2.png",
     units="in", width=13, height=7, res=300)
 
 figure = ggarrange(plots[[1]],plots[[2]],plots[[3]],plots[[4]],plots[[5]],
