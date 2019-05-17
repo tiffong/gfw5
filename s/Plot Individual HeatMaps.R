@@ -68,8 +68,8 @@ for(i in 3:len) {
 }
 
 ##check what is loaded
-View(Rdata)
-View(names)
+#View(Rdata)
+#View(names)
 
 
 ###########################
@@ -81,7 +81,7 @@ View(names)
 #PITCAIRN(5)DONE
 
 ##CHANGE INDEX HERE####
-index = 4
+index = 1
 
 
 #SET TERRITORY,MPA NAME
@@ -229,7 +229,7 @@ if(territory == "Hawaii" ) {
 #View(binned_effort)
 
 effortPlot = list()
-setwd('/Users/tiffanyong/Documents/GitHub/GFW5/Figures/test')
+setwd('/Users/tiffanyong/Documents/GitHub/GFW5/Figures/test2')
 
 #############################################
 ########         PLOTTING    ################
@@ -256,7 +256,7 @@ effortPlot[[1]] = binned_effort %>%
   ) +
   viridis::scale_fill_viridis(name = "Fishing hours" ,
                               trans = "log",
-                              limits=c(NA, 1024),
+                              limits=c(NA, 3000),
                               breaks = scales::log_breaks(n = 6, base = 4))+
   #hrbrthemes::theme_ipsum()+
   theme_minimal()+
@@ -264,10 +264,12 @@ effortPlot[[1]] = binned_effort %>%
     #subtitle = subtitles[[k]],
     y = "",
     x = "")+
-  theme(axis.text.x = element_text(size = 32),
-        axis.text.y = element_text(size = 32),
+  theme(axis.text.x =element_blank(),
+        
+        axis.text.y = element_blank(),
         legend.position="none"
-  ) +
+  ) 
+  
         #plot.title = element_text(size = 18, hjust = 0),
         #plot.subtitle = element_text(size = 16, hjust = 0),
         #plot.margin = margin(10,0,0,0),
@@ -280,6 +282,10 @@ effortPlot[[1]] = binned_effort %>%
 if (territory == "") {
   scale_x_continuous( breaks =seq(-20,24,2) )
 } 
+if ( mpa_name  == 'Nazca-Desventuradas') {
+  scale_x_continuous( breaks = seq(-84, 70, 4)   )
+  
+}
   
 
 
@@ -290,8 +296,8 @@ effortPlot[[1]]
 
 title = paste(mpa_name, '1', '.png', sep = " ", collapse = NULL)
 if(sizing == 'large'){
-  ggsave(title, width = 11, height = 10)
-} else {
+  ggsave(title, width = 5, height = 4)
+w} else {
   ggsave(title, width = 10, height = 10)
 }
 
