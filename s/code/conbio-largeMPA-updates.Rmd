@@ -1,0 +1,3104 @@
+---
+title: "Mozambique coastal analysis"
+author: "Tim White"
+date: "9/6/2019"
+output: html_document
+---
+
+
+Mozambique requested an overview of fishing in their coastal waters. This file produces summary maps of fishing in the EEZ and surrounding waters.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message = FALSE, comment=FALSE, warning=FALSE}
+
+library(fishwatchr)
+library(tidyverse)
+library(bigrquery)
+library(ggsci) 
+library(rnaturalearth)
+library(sf)
+library(raster)
+library(viridis)
+library(googledrive)
+
+# Establish connection to BigQuery project
+con <- DBI::dbConnect(bigrquery::bigquery(), project = "world-fishing-827", use_legacy_sql = FALSE)
+
+
+
+setwd("~/analysis/africa/mozambique/code")
+
+bq_auth  # run this if bigquery account is not yet authorized 
+
+```
+
+Read in GFW logo and land shapefile
+
+```{r}
+
+setwd("~/analysis/africa/mozambique/code")
+
+# GFW logo
+gfw_logo <- png::readPNG("~/analysis/japan/data/GFW_logo_primary_White.png")
+gfw_logo_rast <- grid::rasterGrob(gfw_logo, interpolate = T)
+
+   
+# note the ! in front of Line_type: select all lines NOT baselines   
+eez_shp <- read_sf("/Users/timwhite/Downloads/World_EEZ_v10_20180221/") %>%
+ filter(!Line_type %in% c("Straight Baseline","Archipelagic Baseline"))       
+
+# 12 NM boundary that Charlie modified and sent to #gfw-analysis-cell on Nov 27 2019
+NM12_shp <- read_sf("../Data/Mozambique_12nm_2/")
+
+# only needed to write shp for the first time
+#st_write(eez_shp, "eez200NM.shp")
+#eez_shp = read_sf("/Users/timwhite/Desktop/eez_200NM/")
+
+world = ne_countries(scale = "large", returnclass = "sf")
+#land_shp <- sf::read_sf('../data/shapefiles/ne_10m_world_0_360_raw/ne_10m_world_0_360_raw.shp')
+
+
+
+# read in license list from MOZ
+
+licenses = read.csv("../data/MOZ_LicenseList_April19_Converted_normalized.csv", header = TRUE,stringsAsFactors = FALSE)
+
+# Linear green color palette function
+effort_pal <- colorRampPalette(c('#0C276C', '#3B9088', '#EEFF00', '#ffffff'),
+                               interpolate = 'linear')
+
+
+   
+   
+```
+
+
+
+Query from Jaeyoon to fuzzy match the Mozambique license list with GFW database. I uploaded this table of matched vessels as `scratch_stanford.moz_licenses` in BigQuery and saved as csv.
+
+```{sql connection = con, output.var = "vessels"}
+WITH
+  moz_vessels AS (
+    SELECT *
+    FROM (
+      SELECT 
+        * EXCEPT(registry),
+        ARRAY(SELECT AS STRUCT *
+              FROM UNNEST(registry)
+              WHERE STARTS_WITH(list_uvi, "MOZ") ) AS registry
+      FROM `vessel_database.all_vessels_v20191101`
+      WHERE loose_match )
+    WHERE ARRAY_LENGTH(registry) > 0 )
+    
+SELECT 
+  matched, loose_match,
+  identity.ssvid,
+  identity.n_shipname AS n_shipname_ais,
+  identity.n_callsign AS n_callsign_ais,
+  identity.imo AS imo_ais, 
+  activity.*,
+  registry.* 
+FROM moz_vessels, UNNEST(activity) AS activity, UNNEST(registry) AS registry
+ORDER BY list_uvi, ssvid
+```
+
+```{r}
+  write.csv(vessels, file = "../data/vessel_matching.csv", row.names = FALSE )
+
+## need to remove duplicates from vessel lists for analysis
+# First save the full list, including duplicates
+vessels_withduplicates = vessels
+
+# Then select only distinct vessels
+vessels = vessels %>%
+  dplyr::select(ssvid,shipname,flag,geartype,geartype_original) %>%
+  distinct()
+
+```
+
+
+
+
+
+Planned analyses for March - November 2019:
+
+1) Map all fishing in region
+2) Map fishing of Mozambique fleet (vessel list from Charlie)
+3) Map gaps of all fishing in region
+4) Map gaps of Mozambique fleet
+5) Map VIIRS
+6) Monthly maps or line graphs of fishing effort for 
+
+
+Jaeyoon query finds ~83 registered boats in our database. Do manual review of ~ 170 vessels on Mozambique registry to confirm that there are no others
+
+
+
+From Charlie
+Mozambique Study
+How many from license list matched
+How many unlicensed vessels fished
+Fishing inside closed area (12nm) ????
+Transshipments in region (vessels leaving eez for TS)
+
+
+
+Charlie questions:
+
+Should 12 NM be a main focus?
+time period: 2018?
+Focus on general fleet vs ones on that list?
+Priority to go through and manually check Jaeyoons
+
+
+First summarize which flags are on the license list
+
+```{r}
+
+# Count how many vessels are present for each flag. This is needed to order bars correctly in the barplot
+licenses_by_flag = licenses %>%
+  group_by(flag_iso3) %>%
+  summarize(n_vessels = n_distinct(shipname)) %>%
+  arrange(desc(n_vessels)) 
+
+# Save the correct(descending) order for the barplots.
+flagOrder = as.vector(licenses_by_flag$flag_iso3)
+
+# Summarize by flag and gear for plotting
+licensed_vessels = licenses %>%
+  mutate(geartype = replace(geartype, geartype %in% c("Pelagic trawlers","Trawlers"), "trawlers"), # change Pelagic trawlers to Trawlers for simplicity
+         flag_iso3 = factor(flag_iso3, levels = flagOrder)) %>%                    # reorder by vessel counts by flag (calculated separately above)
+  group_by(flag_iso3, geartype) %>%
+  summarize(n_vessels = n_distinct(shipname)) %>%
+  arrange(desc(n_vessels))
+
+# Plot number vessels by flag and gear
+license_plot = licensed_vessels %>%
+  ggplot() +
+  geom_col(aes(x = flag_iso3,
+               y = n_vessels,
+               fill = geartype)) +
+  labs(title = 'Licensed vessels by flag and geartype',
+       subtitle = '',
+       x = 'Flag state',
+       y = 'Number of vessels') +
+  coord_flip() +
+  theme_gfw() + # apply GFW plot theme
+  scale_fill_manual("Geartype",values = rev(gfw_palette('map_effort'))) + # label legend and use gfw colors
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=14,face="bold"),
+        plot.title = element_text(size=16),
+        plot.margin = margin(20, 20, 20, 20))  # add's extra space on plot border, axis labels were getting cut off
+
+license_plot
+
+ggsave('../figures/mozambique-license-barplot.png',
+               license_plot,
+               width = 7, height = 4, dpi = 600)
+
+```
+
+
+Summarize which vessels we see on AIS
+
+```{r}
+
+# Count how many vessels are present for each flag. This is needed to order bars correctly in the barplot
+vessels_by_flag = vessels %>%
+  group_by(flag) %>%
+  summarize(n_vessels = n_distinct(ssvid)) %>%
+  arrange(desc(n_vessels)) 
+
+# Save the correct(descending) order for the barplots.
+flagOrder = as.vector(vessels_by_flag$flag)
+
+# Summarize by flag and gear for plotting
+vessels_with_ais = vessels %>%
+  mutate(geartype = replace(geartype, geartype == "drifting_longlines|set_longlines", "Longline"), # change Pelagic trawlers to Trawlers for simplicity
+        geartype = replace(geartype, geartype == "set_gillnets|driftnets", "Gillnet"),  
+         flag = factor(flag, levels = flagOrder)) %>%                    # reorder by vessel counts by flag (calculated separately above)
+  group_by(flag, geartype) %>%
+  summarize(n_vessels = n_distinct(ssvid)) %>%
+  arrange(desc(n_vessels)) 
+
+vessels_barplot = vessels_with_ais %>%
+
+# Plot number vessels by flag and gear
+  ggplot() +            
+  geom_col(aes(x = flag,
+               y = n_vessels,
+               fill = geartype)) +
+  labs(title = 'Licensed vessels with AIS by flag and geartype',
+       subtitle = '',
+       x = 'Flag state',
+       y = 'Number of vessels') +
+  coord_flip() +
+  theme_gfw() + # apply GFW plot theme
+  scale_fill_manual("Geartype",values = rev(gfw_palette('map_effort')[1:3])) + # label legend and use gfw colors. the 1:3 is so we only select 3 colors that match the other plots
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=14,face="bold"),
+        plot.title = element_text(size=16),
+        plot.margin = margin(20, 20, 20, 20))  # add's extra space on plot border, axis labels were getting cut off
+
+vessels_barplot
+
+ggsave('../figures/mozambique-license-ais-barplot.png',
+               vessels_barplot,
+               width = 7, height = 4, dpi = 600)
+
+```
+
+
+How many vessels do NOT use AIS on the license list?
+
+```{r}
+
+
+
+no_ais_licensees = licensed_vessels %>%
+ left_join(vessels_with_ais, by = c("geartype","flag_iso3" = "flag")) %>%
+ replace_na(list(n_vessels.y = 0))   %>%                                       # replace NA's with 0s for vessels that have no ais
+ mutate(n_vessels_no_ais =  n_vessels.x - n_vessels.y) %>%    
+ mutate(n_vessels_no_ais = ifelse(n_vessels_no_ais < 0, 0, n_vessels_no_ais ))  # CAREFUL WITH THIS LINE. It avoids the once case where there is a negative number of unlicensed vessels (-2 vessels, this seems to be because jaeyoon's vessel flag matching differs slightly from the official list, so I think it's legit, but using this line going forward could mask calculation errors so always doublecheck that it's doing what you think.)
+
+
+# Count how many vessels are present for each flag. This is needed to order bars correctly in the barplot
+no_ais_vessels_by_flag = no_ais_licensees %>%
+  group_by(flag_iso3) %>%
+  summarize(n_vessels_no_ais = sum(n_vessels_no_ais)) %>%
+  arrange(desc(n_vessels_no_ais)) 
+
+# Save the correct(descending) order for the barplots.
+flagOrder = as.vector(no_ais_vessels_by_flag$flag_iso3)
+no_ais_licensees$flag_iso3 = factor(no_ais_licensees$flag_iso3, levels = flagOrder)
+
+
+# Summarize by flag and gear for plotting
+vessels_no_ais_barplot = no_ais_licensees %>%
+  ggplot() +
+  geom_col(aes(x = flag_iso3,
+               y = n_vessels_no_ais,
+               fill = geartype)) +
+  labs(title = 'Licensed vessels undetected on AIS',
+       subtitle = '',
+       x = 'Flag state',
+       y = 'Number of vessels') +
+  coord_flip() +
+  theme_gfw() + # apply GFW plot theme
+  scale_fill_manual("Geartype",values = rev(gfw_palette('map_effort'))) + # label legend and use gfw colors
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=14,face="bold"),
+        plot.title = element_text(size=16),
+        plot.margin = margin(20, 20, 20, 20))  # add's extra space on plot border, axis labels were getting cut off
+
+vessels_no_ais_barplot  
+
+ggsave('../figures/mozambique-license-no-ais-barplot.png',
+               vessels_no_ais_barplot,
+               width = 7, height = 4, dpi = 600)
+  
+  
+```
+
+
+
+
+
+licensed_vessels = licenses %>%
+  mutate(geartype = replace(geartype, geartype == "Pelagic trawlers", "Trawlers")) %>% # change Pelagic trawlers to Trawlers for simplicity
+  group_by(flag_iso3) %>%
+  summarise(n_vessels = n_distinct(shipname))
+
+reorder(licensed_vessels$flag_iso3,licensed_vessels$n_vessels )
+
+class(licensed_vessels$flag_iso3)
+
+%>%
+  ggplot() +
+  geom_col(aes(x = forcats::fct_reorder(flag_iso3,n_vessels),    # reorder() arranges bar in decreasing order of fishing hours
+                                y = n_vessels,
+               fill = geartype)) +
+  labs(title = 'Licensed vessels by flag and geartype',
+       subtitle = '',
+       x = 'Flag state',
+       y = 'Number of vessels') +
+  coord_flip() +
+  theme_gfw() + # apply GFW plot theme
+  theme(axis.text=element_text(size=10),
+        axis.title=element_text(size=14,face="bold"),
+        plot.title = element_text(size=16),
+        plot.margin = margin(20, 20, 20, 20))  # add's extra space on plot border, axis labels were getting cut off
+
+#licensed_vessels$flag_iso3 = factor(licensed_vessels$flag_iso3, levels = correctOrderVector)
+
+
+# Other attemps at order bars. Wasn't working out for me...
+
+#test = forcats::fct_reorder(licensed_vessels$flag_iso3,licensed_vessels$n_vessels)
+# 
+# orderTest = reorder(licensed_vessels$flag_iso3,licensed_vessels$n_vessels)
+
+#For some reason reorder puts nations in this order, so it's only looking at trawlers. Weird
+#CHN KOR MOZ MRT MUS NAM SYC TWN ZAF
+# 35   2  13   1   3   1   6   1   2
+
+#   mutate(order = row_number())
+
+
+licensed_vessels
+
+
+
+
+
+
+
+
+
+3 queries for effort in Mozambique EEZ:
+1) All fishing vessels
+2) Mozambique license list
+3) Not on Mozambique license list
+
+
+
+Note: for now I'm using pipe_v20190502_fishing. This excludes ~ 10% of potential fishing effort in the Mozambique, including some noise. I can re-run the analysis with the full table (pipe_v20190502) when the analysis is finalized if needed.
+
+
+
+
+
+
+Query *all* effort in Mozambique EEZ in March 2019 - Nov 30 2019. 
+
+
+```{sql connection = con, output.var = "ross_after", echo = TRUE, eval = TRUE}
+
+WITH
+
+-- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+
+--   This subquery fishing query gets gridded daily fishing effort of target vessels
+  fishing AS (
+    SELECT
+    lat_bin,
+    lon_bin,
+    SUM(fishing_hours) as fishing_hours
+    FROM(
+      SELECT
+      ssvid,
+      FLOOR(lat / 0.25) * 0.25 as lat_bin,
+      FLOOR(lon / 0.25) * 0.25 as lon_bin,
+      nnet_score2,
+      timestamp,
+      EXTRACT(date FROM date) as date,
+      hours,
+      IF
+    (ARRAY_LENGTH(regions.eez)> 0,
+      regions.eez[ORDINAL(1)],
+      NULL) AS eez,
+      # Calculate fishing hours by evaluating neural net score
+      IF(nnet_score2 > 0.5, hours, 0) as fishing_hours
+      FROM
+        # Query the _fishing table to reduce query size
+        `gfw_research.pipe_v20190502_fishing`
+      WHERE 
+      date >= "2016-12-01"
+      AND date <= "2017-12-01"
+      AND "9047" in unNEST(regions.mpant)   -- only query effort in Ross SEA MPA
+      AND seg_id IN (
+        SELECT
+          seg_id
+        FROM
+          good_segments)
+
+      )
+    GROUP BY lat_bin, lon_bin)
+
+#####################
+# Return fishing data
+SELECT *
+FROM fishing
+```
+
+
+```{r}
+ross_sf <- sf::read_sf("../data/WDPA_Apr2020_protected_area_555624810-shapefile/WDPA_Apr2020_protected_area_555624810-shapefile-polygons.shp")
+
+
+
+
+
+
+#get shapefile of MPA - TAKES THE MOST TIME - about 2 mins 16 seconds bruh
+mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_June2018_marine-shapefile-polygons")
+
+
+
+#TODO: set mpa name/creation date/mpant ------
+###########VISUALIZING THE MPA#############
+creation_date = '2017-12-01'
+mpa_name = 'Ross Sea Region Marine Protected Area'
+curr_mpa = mpa[mpa@data$NAME == 'Ross Sea Region Marine Protected Area', ]
+curr_mpa = curr_mpa[1:3, ]
+curr_mpa = spTransform(curr_mpa, CRS("+proj=longlat +datum=WGS84 +lon_wrap=180"))
+#View(curr_mpa)
+mpant = '9047'
+
+#vizualize the MPA
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(data = ross_sf, color ="green")
+```
+
+
+
+```{r}
+  write.csv(daily_fishing_locations_allvessels, file = "../data/2019_allvessel_daily_effort.csv", row.names = FALSE )
+```
+
+```{r}
+daily_fishing_locations_allvessels = read.csv(file = "../data/2019_allvessel_daily_effort.csv",header = T)
+```
+
+
+Map all effort in Mozambique EEZ
+
+```{r}
+
+# Make annual raster from daily query output
+
+daily_fishing_locations_allvessels = read.csv(file = "../data/2019_allvessel_daily_effort.csv",header = T)
+
+summary(daily_fishing_locations_allvessels)
+
+annual_alleffort_fishing = daily_fishing_locations_allvessels %>%
+  filter(fishing_hours > 1)  %>% # remove very low values
+  group_by(lon_bin, lat_bin) %>% 
+  summarize(fishing_hours = sum(fishing_hours, na.rm = T),  # make an annual raster of fishing effort
+            log_fishing_hours = log10(sum(fishing_hours, na.rm = T))
+            )
+
+annual_allfishing_map =  ggplot() +
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+  geom_raster(data = annual_alleffort_fishing, aes(x = lon_bin, y = lat_bin, fill = log_fishing_hours)) +
+  
+     coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10)) +
+  scale_fill_gradientn(
+        "Fishing Hours",
+        na.value = NA,
+        limits = c(0, 4),
+        colours = effort_pal(5), # Linear Green
+        labels = c("1","10", "100", "1,000", "10,000"),
+        values = scales::rescale(c(0, 1.2))) +
+  labs(title = 'Fishing effort, Mar - Nov 2019',
+       subtitle = 'All vessels') +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -29,
+                      ymax = -24,
+                      xmin = 38.5,
+                      xmax = 45.5) +
+  theme_gfw_map() +
+   theme(axis.text=element_text(size=10),
+        plot.title = element_text(size=15),
+        legend.title = element_text(size=10),
+        legend.text = element_text(size=10))
+
+annual_allfishing_map
+
+ggsave('../figures/mozambique-2019-all-effort-tenthdegree-vertical.png',
+               annual_allfishing_map,
+               width = 4, height = 7, dpi = 600)
+
+```
+
+
+
+Query only vessels on Mozambique license list
+
+
+```{sql connection = con, output.var = "daily_fishing_locations_mozonly", echo = TRUE, eval = TRUE}
+
+WITH
+
+-- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+
+-- This subquery identifies target vessels from Mozambique vessel list    
+  vessels AS (
+  SELECT
+    ssvid
+  FROM
+    `scratch_stanford.moz_licenses`
+  ),
+
+
+--   This subquery fishing query gets gridded daily fishing effort of target vessels
+  fishing AS (
+    SELECT
+    date,
+    lat_bin,
+    lon_bin,
+    SUM(fishing_hours) as fishing_hours
+    FROM(
+      SELECT
+      ssvid,
+      FLOOR(lat / 0.1) * 0.1 as lat_bin,
+      FLOOR(lon / 0.1) * 0.1 as lon_bin,
+      nnet_score2,
+      timestamp,
+      EXTRACT(date FROM date) as date,
+      hours,
+      IF
+    (ARRAY_LENGTH(regions.eez)> 0,
+      regions.eez[ORDINAL(1)],
+      NULL) AS eez,
+      # Calculate fishing hours by evaluating neural net score
+      IF(nnet_score2 > 0.5, hours, 0) as fishing_hours
+      FROM
+        # Query the _fishing table to reduce query size
+        `gfw_research.pipe_v20190502_fishing`
+      WHERE 
+      date >= "2019-03-01"
+      AND date <= "2019-11-30"
+      AND "8347" in unNEST(regions.eez)   -- only query effort in Momambique EEZ
+      AND seg_id IN (
+        SELECT
+          seg_id
+        FROM
+          good_segments)
+      AND ssvid IN (
+        SELECT
+           CAST(ssvid AS STRING) AS ssvid
+        FROM
+          vessels)    
+      )
+    GROUP BY date, lat_bin, lon_bin)
+
+#####################
+# Return fishing data
+SELECT *
+FROM fishing
+```
+
+```{r}
+  write.csv(daily_fishing_locations_mozonly, file = "../data/2019_mozvessels_daily_effort.csv", row.names = FALSE )
+```
+
+```{r}
+daily_fishing_locations_mozonly = read.csv(file = "../data/2019_mozvessels_daily_effort.csv",header = T)
+```
+
+
+Map effort on MOZ license list
+
+```{r}
+
+daily_fishing_locations_mozonly
+
+# Make annual raster from daily query output
+
+annual_moz_fishing = daily_fishing_locations_mozonly %>%
+  filter(fishing_hours > 1)  %>% # remove very low values
+  group_by(lon_bin, lat_bin) %>% 
+  summarize(fishing_hours = sum(fishing_hours, na.rm = T),  # make an annual raster of fishing effort
+            log_fishing_hours = log10(sum(fishing_hours, na.rm = T))
+            )
+
+
+annual_moz_map =  ggplot() +
+    geom_raster(data = annual_moz_fishing, aes(x = lon_bin, y = lat_bin, fill = log_fishing_hours)) +
+    geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+
+          coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10)) +
+  scale_fill_gradientn(
+        "Fishing Hours",
+        na.value = NA,
+        limits = c(0, 4),
+        colours = effort_pal(5), # Linear Green
+        labels = c("1","10", "100", "1,000", "10,000"),
+        values = scales::rescale(c(0, 1))) +
+  labs(title = 'Fishing effort, Mar - Nov 2019',
+       subtitle = 'Vessels on MOZ license list') +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -29,
+                      ymax = -24,
+                      xmin = 38.5,
+                      xmax = 45.5) +
+  theme_gfw_map() +
+   theme(axis.text=element_text(size=10),
+        plot.title = element_text(size=15),
+        legend.title = element_text(size=10),
+        legend.text = element_text(size=10))
+
+annual_moz_map
+
+ggsave('../figures/mozambique-2019-licensed-effort-tenthdegree-12NM.png',
+               annual_moz_map,
+               width = 4, height = 7, dpi = 600)
+ 
+
+
+```
+
+
+
+Now query all effort this is NOT on Mozambique license list
+
+```{sql connection = con, output.var = "daily_fishing_locations_notmozonly", echo = TRUE, eval = TRUE}
+
+WITH
+
+-- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+
+-- This subquery identifies target vessels from Mozambique vessel list    
+  vessels AS (
+  SELECT
+    ssvid
+  FROM
+    `scratch_stanford.moz_licenses`
+  ),
+
+
+--   This subquery fishing query gets gridded daily fishing effort of target vessels
+  fishing AS (
+    SELECT
+    date,
+    lat_bin,
+    lon_bin,
+    SUM(fishing_hours) as fishing_hours
+    FROM(
+      SELECT
+      ssvid,
+      FLOOR(lat / 0.1) * 0.1 as lat_bin,
+      FLOOR(lon / 0.1) * 0.1 as lon_bin,
+      nnet_score2,
+      timestamp,
+      EXTRACT(date FROM date) as date,
+      hours,
+      IF
+    (ARRAY_LENGTH(regions.eez)> 0,
+      regions.eez[ORDINAL(1)],
+      NULL) AS eez,
+      # Calculate fishing hours by evaluating neural net score
+      IF(nnet_score2 > 0.5, hours, 0) as fishing_hours
+      FROM
+        # Query the _fishing table to reduce query size
+        `gfw_research.pipe_v20190502_fishing`
+      WHERE 
+      date >= "2019-03-01"
+      AND date <= "2019-11-30"
+      AND "8347" in unNEST(regions.eez)   -- only query effort in Momambique EEZ
+      AND seg_id IN (
+        SELECT
+          seg_id
+        FROM
+          good_segments)
+      AND ssvid NOT IN (        -- Note the NOT IN here. Query effort for vessels NOT on license list
+        SELECT
+           CAST(ssvid AS STRING) AS ssvid
+        FROM
+          vessels)    
+      )
+    GROUP BY date, lat_bin, lon_bin)
+
+#####################
+# Return fishing data
+SELECT *
+FROM fishing
+```
+
+```{r}
+  write.csv(daily_fishing_locations_notmozonly, file = "../data/2019_notmozvessels_daily_effort.csv", row.names = FALSE )
+```
+
+```{r}
+daily_fishing_locations_notmozonly = read.csv(file = "../data/2019_notmozvessels_daily_effort.csv",header = T)
+```
+
+
+Map effort NOT on MOZ license list
+
+```{r}
+
+sum(daily_fishing_locations_allvessels$fishing_hours)    # 87036.05hours for all vessels
+sum(daily_fishing_locations_mozonly$fishing_hours)       # 66349.66 hours for vessels on MOZ list
+sum(daily_fishing_locations_notmozonly$fishing_hours)    # 20686.39  if I use pipe_v... instead of pipe_v..._fishing, but the data costs are much 
+66350 / 87036
+
+# Make annual raster from daily query output
+
+annual_notmoz_fishing = daily_fishing_locations_notmozonly %>%
+  filter(fishing_hours > 1)  %>% # remove very low values
+  group_by(lon_bin, lat_bin) %>% 
+  summarize(fishing_hours = sum(fishing_hours, na.rm = T),  # make an annual raster of fishing effort
+            log_fishing_hours = log10(sum(fishing_hours, na.rm = T))
+            )
+
+
+annual_notmoz_map =  ggplot() +
+  geom_raster(data = annual_notmoz_fishing, aes(x = lon_bin, y = lat_bin, fill = log_fishing_hours)) +
+  geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +  
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+ 
+  
+     coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10)) +
+  scale_fill_gradientn(
+        "Fishing Hours",
+        na.value = NA,
+        limits = c(0, 4),
+        colours = effort_pal(5), # Linear Green
+        labels = c("1","10", "100", "1,000", "10,000"),
+        values = scales::rescale(c(0, 1))) +
+  labs(title = 'Fishing effort, Mar - Nov 2019',
+       subtitle = 'Vessels not on MOZ license list') +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -29,
+                      ymax = -24,
+                      xmin = 38.5,
+                      xmax = 45.5) +
+  theme_gfw_map() +
+   theme(axis.text=element_text(size=10),
+        plot.title = element_text(size=15),
+        legend.title = element_text(size=10),
+        legend.text = element_text(size=10))
+
+annual_notmoz_map
+
+ggsave('../figures/mozambique-2019-notlicensed-effort-tenthdegree.png',
+               annual_notmoz_map,
+               width = 4, height = 7, dpi = 600)
+ 
+```
+
+
+
+
+
+
+```{sql connection = con, output.var = "vessel_count", echo = TRUE, eval = TRUE}
+WITH
+
+-- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+
+-- This subquery identifies target vessels from Mozambique vessel list    
+  vessels AS (
+  SELECT
+    ssvid
+  FROM
+    `scratch_stanford.moz_licenses`
+  ),
+
+
+ssvid_fishing AS (
+SELECT
+  date,
+  ssvid,
+  SUM(fishing_hours) as fishing_hours
+FROM (
+  SELECT
+    ssvid,
+    nnet_score2,
+    EXTRACT(date FROM date) as date,
+    hours,
+    IF(nnet_score2 > 0.5, hours, 0) as fishing_hours
+  FROM
+    `gfw_research.pipe_v20190502_fishing`
+  WHERE
+    date >= "2019-03-01"
+    AND date <= "2019-11-30"
+    AND "8347" in unNEST(regions.eez)   -- only query effort in Momambique EEZ
+    AND seg_id IN (
+        SELECT
+          seg_id
+        FROM
+          good_segments)
+      AND ssvid IN (
+        SELECT
+           CAST(ssvid AS STRING) AS ssvid
+        FROM
+          vessels)      
+)
+GROUP BY
+  date,ssvid
+)
+
+
+-- Count vessels active by date
+
+SELECT 
+date,
+count(*) num_ssvid 
+FROM ssvid_fishing
+GROUP BY date
+```
+
+
+
+Calculate monthly fishing effort sums and vessels active for the Mozambique EEZ
+
+```{r, fig.width=5, fig.height=2}
+
+
+## Daily fishing hours
+
+fishing_moz_byday <- daily_fishing_locations_mozonly %>%
+    group_by(date) %>%
+    summarize(total_fishing_hours = sum(fishing_hours, na.rm = TRUE)) %>%
+    ungroup()
+
+sum(fishing_moz_byday$total_fishing_hours)
+
+fishing_notmoz_byday <- daily_fishing_locations_notmozonly %>%
+    group_by(date) %>%
+    summarize(total_fishing_hours = sum(fishing_hours, na.rm = TRUE)) %>%
+    ungroup()
+
+sum(fishing_notmoz_byday$total_fishing_hours)
+
+
+effort_lineplot <- ggplot() +
+    geom_line(data = fishing_moz_byday, aes(color = 'On License List',x = date, y = total_fishing_hours)) +
+    geom_line(data = fishing_notmoz_byday, aes(color = 'Not On List',x = date, y = total_fishing_hours)) +
+    scale_x_date('', date_breaks = '1 months', date_labels = '%b') +
+    scale_y_continuous('Daily fishing hours', limits = c(0, 500), breaks = c(seq(0, 500, 100))) +
+    theme_minimal() +
+    theme(panel.grid.major.y = element_blank(),
+          panel.grid.minor = element_blank(),
+          plot.title = element_text(family = 'Roboto-Bold', size = 12),
+          axis.title = element_text(family = 'Roboto', size = 10),
+          axis.text = element_text(family = 'Roboto', size =  10)) +
+    ggtitle('Total fishing hours per day (2019)') +
+  scale_colour_manual("", 
+                      breaks = c('On License List', 'Not On List'),
+                      values = c("red", "black"))
+
+effort_lineplot
+
+ggsave('../figures/daily_effort_lineplot.png',
+               effort_lineplot,
+               width = 7, height = 3, dpi = 300)
+
+
+```
+
+
+
+```{r, fig.width=5, fig.height=2}
+fishing_notmoz_monthly <- daily_fishing_locations_notmozonly %>%
+    mutate(month = format(date, '%m'),
+           year = format(date, '%Y'),
+           mon_year = paste0(month,'-',year)) %>%
+    group_by(mon_year) %>%
+    summarize(total_fishing_hours = sum(fishing_hours, na.rm = TRUE)) %>%
+    ungroup()
+fishing_notmoz_monthly
+
+
+#### Vessels fishing each day
+
+
+vesselcount_lineplot <- ggplot() +
+    geom_line(data = vessel_count, aes(x = date, y = num_ssvid)) +
+    scale_x_date('', date_breaks = '1 months', date_labels = '%b') +
+    scale_y_continuous('Number of Vessels', limits = c(0, 100), breaks = c(seq(0, 100, 20))) +
+    theme_minimal() +
+    theme(panel.grid.major.y = element_blank(),
+          panel.grid.minor = element_blank(),
+          plot.title = element_text(family = 'Roboto-Bold', size = 12),
+          axis.title = element_text(family = 'Roboto', size = 10),
+          axis.text = element_text(family = 'Roboto', size =  10)) +
+    ggtitle('Total licensed vessels fishing per day') 
+
+vesselcount_lineplot
+
+
+```
+
+
+
+
+GAP ANALYSIS
+
+Query gaps for 2019, looking at only licensed vessels on the MOZ list
+
+
+```{sql connection = con, output.var = "moz_gaps", echo = TRUE, eval = TRUE}
+
+SELECT
+*
+FROM (
+SELECT
+  ssvid,
+  off_timestamp AS gap_start,
+  on_timestamp AS gap_end,
+  off_lat AS gap_start_lat,
+  off_lon AS gap_start_lon,
+  on_lat AS gap_end_lat,
+  on_lon AS gap_end_lon,
+  on_distance_from_shore_m/1000 AS gap_end_distance_shore_km,
+  gap_hours,
+  gap_distance_m
+FROM
+  `world-fishing-827.proj_ais_gaps_catena.raw_gaps_v20191125`
+WHERE
+   off_timestamp > ("2019-03-01") AND
+   on_timestamp < ("2019-11-30") 
+   AND ssvid IN (
+    SELECT
+    CAST(ssvid as STRING) ssvid
+  FROM
+    `scratch_stanford.moz_licenses`
+    )
+ )
+
+```
+```{r}
+readr::write_csv(x = moz_gaps, path = '../data/mozgaps-ungridded.csv')
+```
+
+
+
+```{r}
+
+# Bin gaps by 0.1 degree intervals, sum the total number of gaps throughout the time period, filter to West Africa region (the data is currently global because these boats also fish in other regions)
+
+moz_gaps_binned = moz_gaps %>% 
+  mutate(gap_start_lon = floor(gap_start_lon/0.1) * 0.1,
+         gap_start_lat = floor(gap_start_lat/0.1) * 0.1) %>%
+  group_by(gap_start_lon, gap_start_lat) %>%
+  filter(gap_start_lon > 32 & gap_start_lon < 50 & gap_start_lat > - 28 & gap_start_lat < -9) %>%
+    summarize(total = n()) %>%
+   mutate(total = ifelse(total >100, 100, total ))       # Filter for plotting - set all max values to 100
+
+summary(moz_gaps_binned)
+
+# Save the gaps raster
+readr::write_csv(x = moz_gaps_binned, path = '../data/mozgaps-raster.csv')
+
+
+# Map the gaps
+
+moz_gaps_plot = ggplot() +
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+  geom_raster(data = moz_gaps_binned,
+             aes(gap_start_lon,
+                 gap_start_lat,
+                 fill = log10(total))) +
+   coord_sf(xlim = c(32, 50),
+               ylim = c(-28, -9)) +
+   scale_fill_gradientn("Total gaps",
+                         colours = effort_pal(5),
+                        limits = c(0, 2),
+                        labels = c("1","10",">100"),
+                        breaks = c(0,1,2),
+                        values = scales::rescale(c(0, 1))) +
+  labs(title = 'Gaps in AIS, licensed vessels') +
+#  guides(fill = guide_colourbar(barwidth = 1)) +
+  theme_gfw_map() +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -30,
+                      ymax = -25,
+                      xmin = 40.5,
+                      xmax = 50.5) 
+
+moz_gaps_plot
+
+ggplot2::ggsave("../figures/moz-gaps-tenth-degree.png",
+                moz_gaps_plot,
+                 width = 7, height = 4,
+                dpi = 600)
+
+mava_gaps_binned
+
+```
+
+
+
+Gaps map zoomed in on coastline, with 12 NM boundary showing. There seem to be many gaps near the line so we need a closer view
+
+
+
+```{r}
+
+# Bin gaps by 0.1 degree intervals, sum the total number of gaps throughout the time period, filter to West Africa region (the data is currently global because these boats also fish in other regions)
+
+# Map the gaps
+
+moz_gaps_plot = ggplot() +
+  geom_raster(data = moz_gaps_binned,
+             aes(gap_start_lon,
+                 gap_start_lat,
+                 fill = log10(total))) +
+    geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+   coord_sf(xlim = c(32, 40),
+               ylim = c(-26, -16)) +
+   scale_fill_gradientn("Total gaps",
+                         colours = effort_pal(5),
+                        limits = c(0, 2),
+                        labels = c("1","10",">100"),
+                        breaks = c(0,1,2),
+                        values = scales::rescale(c(0, 1))) +
+  labs(title = 'Gaps in AIS, licensed vessels') +
+#  guides(fill = guide_colourbar(barwidth = 1)) +
+  theme_gfw_map() +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -27,
+                      ymax = -25,
+                      xmin = 36,
+                      xmax = 40) 
+
+moz_gaps_plot
+
+ggplot2::ggsave("../figures/moz-gaps-tenth-degree-12NM.png",
+                moz_gaps_plot,
+                 width = 7, height = 4,
+                dpi = 600)
+
+mava_gaps_binned
+
+```
+
+
+Now query gaps for vessels NOT on the MOZ list
+
+```{sql connection = con, output.var = "moz_gaps_notlicensed", echo = TRUE, eval = TRUE}
+
+SELECT
+*
+FROM (
+SELECT
+  ssvid,
+  off_timestamp AS gap_start,
+  on_timestamp AS gap_end,
+  off_lat AS gap_start_lat,
+  off_lon AS gap_start_lon,
+  on_lat AS gap_end_lat,
+  on_lon AS gap_end_lon,
+  on_distance_from_shore_m/1000 AS gap_end_distance_shore_km,
+  gap_hours,
+  gap_distance_m
+FROM
+  `world-fishing-827.proj_ais_gaps_catena.raw_gaps_v20191125`
+WHERE
+   off_timestamp > ("2019-03-01") AND
+   on_timestamp < ("2019-11-30") 
+   AND ssvid NOT IN (
+    SELECT
+    CAST(ssvid as STRING) ssvid
+  FROM
+    `scratch_stanford.moz_licenses`
+    )
+ )
+
+```
+```{r}
+readr::write_csv(x = moz_gaps_notlicensed, path = '../data/mozgaps-ungridded-notlicensed.csv')
+```
+
+Map gaps for vessels not on license list
+
+```{r}
+
+moz_gaps_binned_notlicensed = moz_gaps_notlicensed %>% 
+  mutate(gap_start_lon = floor(gap_start_lon/0.1) * 0.1,
+         gap_start_lat = floor(gap_start_lat/0.1) * 0.1) %>%
+  group_by(gap_start_lon, gap_start_lat) %>%
+  filter(gap_start_lon > 32 & gap_start_lon < 50 & gap_start_lat > - 28 & gap_start_lat < -9) %>%
+    summarize(total = n()) %>%
+   mutate(total = ifelse(total >100, 100, total ))       # Filter for plotting - set all max values to 100
+
+summary(moz_gaps_binned_notlicensed)
+
+# Save the gaps raster
+readr::write_csv(x = moz_gaps_binned, path = '../data/mozgaps-notlicensedraster.csv')
+
+
+# Map the gaps
+
+moz_gaps_notlicensed_plot = ggplot() +
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+  geom_raster(data = moz_gaps_binned_notlicensed,
+             aes(gap_start_lon,
+                 gap_start_lat,
+                 fill = log10(total))) +
+   coord_sf(xlim = c(32, 50),
+               ylim = c(-28, -9)) +
+   scale_fill_gradientn("Total gaps",
+                         colours = effort_pal(5),
+                        limits = c(0, 2),
+                        labels = c("1","10",">100"),
+                        breaks = c(0,1,2),
+                        values = scales::rescale(c(0, 1))) +
+  labs(title = 'Gaps in AIS, vessels not on license list') +
+#  guides(fill = guide_colourbar(barwidth = 1)) +
+  theme_gfw_map() +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -30,
+                      ymax = -25,
+                      xmin = 40.5,
+                      xmax = 50.5) 
+
+moz_gaps_notlicensed_plot
+
+ggplot2::ggsave("../figures/moz-gaps-notlicensed-tenth-degree.png",
+                moz_gaps_notlicensed_plot,
+                 width = 7, height = 4,
+                dpi = 600)
+
+mava_gaps_binned
+
+```
+
+
+
+Gaps map zoomed in on coastline, with 12 NM boundary showing. There seem to be many gaps near the line so we need a closer view
+
+
+
+```{r}
+
+# Map the gaps
+
+moz_gaps_plot_notlicensed_12nm = ggplot() +
+  geom_raster(data = moz_gaps_binned_notlicensed,
+             aes(gap_start_lon,
+                 gap_start_lat,
+                 fill = log10(total))) +
+    geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+  geom_sf(data = world,
+        fill = '#374a6d',
+        color = '#0A1738',
+        size = 0.1) +
+  geom_sf(data = eez_sf,
+    color = '#374a6d',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.6) +
+   coord_sf(xlim = c(32, 40),
+               ylim = c(-26, -16)) +
+   scale_fill_gradientn("Total gaps",
+                         colours = effort_pal(5),
+                        limits = c(0, 2),
+                        labels = c("1","10",">100"),
+                        breaks = c(0,1,2),
+                        values = scales::rescale(c(0, 1))) +
+  labs(title = 'Gaps in AIS, vessels not on license list') +
+#  guides(fill = guide_colourbar(barwidth = 1)) +
+  theme_gfw_map() +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+   annotation_custom(gfw_logo_rast,               # add GFW logo in bottom right
+                      ymin = -27,
+                      ymax = -25,
+                      xmin = 36,
+                      xmax = 40) 
+
+moz_gaps_plot_notlicensed_12nm
+
+ggplot2::ggsave("../figures/moz-gaps-tenth-degree-12NM_notlicensed.png",
+                moz_gaps_plot_notlicensed_12nm,
+                 width = 7, height = 4,
+                dpi = 600)
+
+mava_gaps_binned
+
+```
+
+
+
+Query gaps for all fishing vessels in region surrounding MOZ. Will join this with list of vessels fishing in MOZ next.
+
+
+```{sql connection = con, output.var = "moz_gaps_all", echo = TRUE, eval = TRUE}
+
+SELECT
+  *
+FROM (
+  SELECT
+    ssvid,
+    off_timestamp AS gap_start,
+    on_timestamp AS gap_end,
+    off_lat AS gap_start_lat,
+    off_lon AS gap_start_lon,
+    on_lat AS gap_end_lat,
+    on_lon AS gap_end_lon,
+    on_distance_from_shore_m/1000 AS gap_end_distance_shore_km,
+    gap_hours,
+    gap_distance_m
+  FROM
+    `world-fishing-827.proj_ais_gaps_catena.raw_gaps_v20191125`
+  WHERE
+    off_lon > 32
+    AND off_lon < 50
+    AND off_lat > - 28
+    AND off_lat < -9
+    AND off_timestamp > ("2019-03-01")
+    AND on_timestamp < ("2019-11-30")
+    AND ssvid IN (
+    SELECT
+      ssvid
+    FROM
+      `gfw_research.vi_ssvid_v20190430`
+    WHERE
+      on_fishing_list_best) )
+```
+
+
+Sum gaps by vessel, join with other metrics
+
+```{r}
+
+gaps_by_vessel = moz_gaps_all %>% 
+  group_by(ssvid) %>%
+#  filter(gap_start_lon > 32 & gap_start_lon < 50 & gap_start_lat > - 28 & gap_start_lat < -9) %>%
+    summarize(gaps_6h = n()) 
+
+summary(moz_gaps_binned_notlicensed)
+
+# Save the gaps raster
+readr::write_csv(x = moz_gaps_binned, path = '../data/mozgaps-notlicensedraster.csv')
+
+```
+
+
+
+
+
+
+
+MORE FISHING ANALYSIS
+
+Individual vessel analysis
+
+
+
+
+Query fishing effort by individual vessel and by lat/lon so we can produce a table with fishing effort totals for each vessel.
+
+NOTE: This is not currently limited to just vessels on the vessel list. Vessels aren't on the MOZ license list will have shipname = NA (along with other metadata), since this query pulls shipname from the license list. After we examine the licensed vessels, we'll add 
+metadata for those potentially unlicensed vessels.
+
+
+
+Query effort for all vessels within MOZ
+
+```{sql connection = con, output.var = "annual_vessel_totals", echo = TRUE, eval = TRUE}
+WITH
+
+
+  -- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+    
+    
+  --   This subquery fishing query gets gridded daily fishing effort of target vessels
+  daily_fishing AS (
+  SELECT
+    ssvid,
+    SUM(fishing_hours) AS fishing_hours,
+    date
+  FROM (
+    SELECT
+      ssvid,
+      nnet_score2,
+      timestamp,
+      EXTRACT(date
+      FROM
+        date) AS date,
+      hours,
+    IF
+      (ARRAY_LENGTH(regions.eez)> 0,
+        regions.eez[ORDINAL(1)],
+        NULL) AS eez,
+      # Calculate fishing hours by evaluating neural net score
+    IF
+      (nnet_score2 > 0.5,
+        hours,
+        0) AS fishing_hours
+    FROM
+      # Query the _fishing table to reduce query size
+      `gfw_research.pipe_v20190502_fishing`
+    WHERE
+      date >= "2019-03-01"
+      AND date <= "2019-11-30"
+      AND "8347" IN UNNEST(regions.eez)   -- only query effort in Momambique EEZ
+      AND seg_id IN (
+      SELECT
+        seg_id
+      FROM
+        good_segments)
+       AND ssvid IN (
+    SELECT
+      ssvid
+    FROM
+      `gfw_research.vi_ssvid_v20190430`
+    WHERE
+      on_fishing_list_best)  
+        )
+  GROUP BY
+    ssvid,
+    date
+    HAVING
+    fishing_hours > 1),
+    
+-- sum daily effort into one total value
+
+total_fishing AS (
+SELECT
+  ssvid,
+  SUM(fishing_hours) AS fishing_hours,
+  min(date) AS first_date,
+  max(date) AS last_date
+FROM 
+daily_fishing
+GROUP BY
+  ssvid
+  ),
+    
+-- Pull vessel info 
+  vessel_info AS (
+  SELECT
+    ssvid,
+    best.best_flag as flag,
+    ais_identity.n_shipname_mostcommon.value AS shipname,
+    best.best_vessel_class AS geartype,
+  FROM
+    `world-fishing-827.gfw_research.vi_ssvid_v20190430`
+    WHERE
+    on_fishing_list_best
+ )
+ 
+ 
+  #####################
+  # Return fishing data
+  
+SELECT
+  *
+FROM
+  total_fishing
+ LEFT JOIN
+  vessel_info
+  USING
+  (ssvid)
+ORDER BY
+  fishing_hours DESC
+
+```
+
+
+Add lat/lon/date info to analyze effort within the 12 NM boundary of MOZ
+
+
+
+```{sql connection = con, output.var = "daily_fishing_by_vessel", echo = TRUE, eval = TRUE}
+
+WITH
+
+
+  -- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+    
+    
+  --   This subquery fishing query gets gridded daily fishing effort of target vessels
+  fishing AS (
+  SELECT
+    ssvid,
+    date,
+    lat_bin,
+    lon_bin,
+    SUM(fishing_hours) AS fishing_hours
+  FROM (
+    SELECT
+      ssvid,
+      FLOOR(lat / 0.1) * 0.1 AS lat_bin,
+      FLOOR(lon / 0.1) * 0.1 AS lon_bin,
+      nnet_score2,
+      timestamp,
+      EXTRACT(date
+      FROM
+        date) AS date,
+      hours,
+    IF
+      (ARRAY_LENGTH(regions.eez)> 0,
+        regions.eez[ORDINAL(1)],
+        NULL) AS eez,
+      # Calculate fishing hours by evaluating neural net score
+    IF
+      (nnet_score2 > 0.5,
+        hours,
+        0) AS fishing_hours
+    FROM
+      # Query the _fishing table to reduce query size
+      `gfw_research.pipe_v20190502_fishing`
+    WHERE
+      date >= "2019-03-01"
+      AND date <= "2019-11-30"
+      AND "8347" IN UNNEST(regions.eez)   -- only query effort in Momambique EEZ
+      AND seg_id IN (
+      SELECT
+        seg_id
+      FROM
+        good_segments)
+        AND ssvid IN (
+    SELECT
+      ssvid
+    FROM
+      `gfw_research.vi_ssvid_v20190430`
+    WHERE
+      on_fishing_list_best)  
+        )
+  GROUP BY
+    ssvid,
+    date,
+    lat_bin,
+    lon_bin
+   HAVING
+    fishing_hours > 1),
+    
+-- Pull vessel info 
+  vessel_info AS (
+  SELECT
+    ssvid,
+    best.best_flag as flag,
+    ais_identity.n_shipname_mostcommon.value AS shipname,
+    best.best_vessel_class AS geartype,
+  FROM
+    `world-fishing-827.gfw_research.vi_ssvid_v20190430`
+ )
+ 
+ 
+  #####################
+  # Return fishing data
+  
+SELECT
+  *
+FROM
+  fishing
+ LEFT JOIN
+  vessel_info
+  USING
+  (ssvid)
+ORDER BY
+  fishing_hours DESC
+```
+```{r}
+readr::write_csv(x = daily_fishing_by_vessel, path = '../data/allvessels-daily-fishing-spatial.csv')
+```
+
+
+
+```{r}
+
+#sum(daily_fishing_by_vessel$fishing_hours)  # just  Check. same as when we don't include ssvid, which is good
+
+# 1: Sum fishing effort by year for each vessel (group by lat, lon, vessel and sum across date)
+# The code below currently works, but loses all the meta-data.
+# Tried this to retain metadata but it didn't work.... Will just add it back in later. https://stackoverflow.com/questions/22523131/dplyr-summarise-equivalent-of-drop-false-to-keep-groups-with-zero-length-in
+fishing_by_vessel = daily_fishing_by_vessel %>%
+  filter(fishing_hours > 1) %>% # restrict to 3 EEZs
+  group_by(ssvid,lon_bin, lat_bin) %>% 
+  summarize(fishing_hours = sum(fishing_hours, na.rm = T),  # make an annual raster of fishing effort
+            log_fishing_hours = log10(sum(fishing_hours, na.rm = T))
+            )
+
+# NOTE: this chunk isn't needed since I wrote a query above to replace it.
+# # Calculate fishing sums by vessel within MOZ EEZ
+# fishing_sums = fishing_by_vessel %>%
+#   group_by(ssvid) %>%
+#    summarize(fishing_hours = sum(fishing_hours, na.rm = T),  # make an annual raster of fishing effort
+#             log_fishing_hours = log10(sum(fishing_hours, na.rm = T))
+#    )
+
+# Covert to SF object to intersect with shapefile
+
+fishing_sf = sf::st_as_sf(fishing_by_vessel,
+                                 coords = c("lon_bin","lat_bin"))
+fishing_sf = sf::st_set_crs(fishing_sf, value = 4326) # set projecti
+
+# 2: Intersection with 12 NM Polygon
+nm12_fishing = sf::st_intersection(fishing_sf, NM12_shp)
+
+# This is the sum of fishing hours wihtin 12 NM for each vessel
+nm12_sums = nm12_fishing %>%
+  group_by(ssvid) %>%
+  summarize(fishing_hours_12nm = sum(fishing_hours, na.rm = T)) %>%
+  st_set_geometry(NULL)  # remove the geometry info since we longer need it
+
+
+# Join the table of all MOZ fishing hours with the 12 NM hours table
+all_fishing_by_vessel = annual_vessel_totals %>%
+ left_join(nm12_sums, by = "ssvid") %>%
+  left_join(dplyr::select(vessels, ssvid, geartype_original), by = "ssvid") %>%
+   left_join(gaps_by_vessel, by = "ssvid") %>%
+   mutate(gaps_6h = replace_na(gaps_6h, 0),         # replace NAs with 0z in the gaps column 
+          license = !is.na(geartype_original)) %>%  # only vessels on MOZ license list have a geartype_original value
+  dplyr::select(shipname, flag, ssvid, geartype, geartype_original, fishing_hours, fishing_hours_12nm, first_date, last_date, gaps_6h, license)
+
+
+readr::write_csv(x = all_fishing_by_vessel, path = '../data/MOZ-fishing-all-vessels.csv')
+
+
+# Get vessel info for vessels not on license list
+# potentially_unlicensed = all_fishing_by_vessel %>%
+#   filter(is.na(shipname)) %>%
+
+```
+
+
+
+
+Query carrier encounters in the region
+
+NOTE: THIS ENCOUNTER TABLE PROBABLY NEEDS TO BE UPDATED. 
+FOR NOW, NONE OF THE ENCOUNTERS ARE WITH VESSELS ON OUR LIST
+
+```{sql connection = con, output.var = "carrier_encounters", echo = TRUE, eval = TRUE}
+
+
+WITH encounters AS (
+  SELECT
+  #event_id,
+  vessel_id,
+  event_start,
+  event_end,
+  lat_mean,
+  lon_mean,
+  #event_geography,
+  JSON_EXTRACT(event_info,
+               "$.median_distance_km") AS median_distance_km,
+  JSON_EXTRACT(event_info,
+               "$.median_speed_knots") AS median_speed_knots,
+  SPLIT(event_id, ".")[ORDINAL(1)] AS event,
+  CAST (event_start AS DATE) event_date
+  FROM
+  `world-fishing-827.pipe_production_v20190502.published_events_encounters`
+  WHERE
+  event_start >= TIMESTAMP("2019-03-01")
+  AND event_end <= TIMESTAMP("2019-11-30")
+  AND lat_mean < -9
+  AND lat_mean > - 28
+  AND lon_mean < 50
+  AND lon_mean > 32),
+
+
+ssvid_map AS (
+  SELECT
+  vessel_id,
+  ssvid,
+  day
+  FROM
+  `world-fishing-827.pipe_production_b.segment_vessel_daily_*`),
+
+
+###
+# encounters with ssvid
+###
+
+
+encounter_ssvid AS (
+  SELECT * EXCEPT(vessel_id)
+  FROM (
+    SELECT
+    *
+      FROM
+    encounters) a
+  JOIN (
+    SELECT *
+      FROM
+    ssvid_map) b
+  ON a.vessel_id = b.vessel_id AND
+  a.event_date = b.day),
+
+
+
+###
+# bunker specific vessel encounters
+###
+
+carrier_encounters AS (
+  SELECT
+  * EXCEPT (ssvid, first_timestamp, last_timestamp)
+  FROM (
+    SELECT
+    *
+      FROM
+    encounter_ssvid) a
+  JOIN (
+    SELECT
+    identity.mmsi as mmsi,
+    activity.first_timestamp as first_timestamp,
+    activity.last_timestamp as last_timestamp,
+    identity.flag as flag
+    FROM
+    `world-fishing-827.vessel_database.all_vessels_v20190701` WHERE is_carrier ) b
+  --`world-fishing-827.scratch_nate.bunker_vessel_timeranges_v20190410`) b
+ON CAST(a.ssvid AS INT64) = b.mmsi
+WHERE event_start BETWEEN first_timestamp AND last_timestamp AND
+event_end BETWEEN first_timestamp and last_timestamp
+group by 1,2,3,4,5,6,7,8,9,10,11),
+
+
+encounters_join AS (
+  SELECT
+  mmsi as carrier_ssvid,
+  flag,
+  neighbor_ssvid,
+  event_start,
+  event_end,
+  EXTRACT(HOUR FROM event_start) as start_hour,
+  TIMESTAMP_DIFF(event_end, event_start, SECOND)/3600 AS duration_hr,
+  lat_mean,
+  lon_mean,
+  median_distance_km,
+  median_speed_knots,
+  a.event AS event,
+  event_date
+  FROM
+  (
+    SELECT
+    *
+      FROM
+    carrier_encounters) a
+  JOIN
+  (SELECT
+    ssvid AS neighbor_ssvid,
+    event
+    FROM
+    encounter_ssvid) b
+  ON a.event = b.event
+  WHERE CAST(mmsi AS STRING) != neighbor_ssvid)
+
+
+SELECT * EXCEPT(ssvid)
+FROM (
+  SELECT
+  *
+    FROM
+  encounters_join) a
+JOIN
+(SELECT
+  ssvid
+  FROM
+  `gfw_research.vi_ssvid_v20190430`
+  WHERE on_fishing_list_best AND
+  NOT ( REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value , r"(.*)([\s]+[0-9]+%)$")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"[0-9].[0-9]V")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"[0-9]*\ [0-9]V")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"(.*)[@]+([0-9]+V[0-9]?)$")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"BOUY")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"BUOY")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"NET MARK")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"NETMARK")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"^[0-9]*-[0-9]*$")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"NET FISHING")
+        OR REGEXP_CONTAINS(ais_identity.shipname_mostcommon.value, r"NETFISHING"))) b
+ON a.neighbor_ssvid = b.ssvid
+WHERE (lon_mean >= 80.21524 OR lon_mean <= 80.01524) 
+AND (lat_mean >=	14.353803 OR lat_mean <=	14.153803) -- remove Indian anchorage
+GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13
+```
+
+Trying this query with the newer example in the Github Q1 2020 folder to see if that yields more results
+
+```{sql connection = con, output.var = "all_encounters_updated", echo = TRUE, eval = TRUE}
+####
+ -- Retrieve initial encounter data, specifing time range and lat/lon
+ -- JSON_EXTRACT is used to seperate the listed event_info data of interest into separate columns
+WITH
+encounters AS (
+SELECT
+event_id,
+vessel_id,
+event_start,
+event_end,
+lat_mean,
+lon_mean,
+JSON_EXTRACT(event_info,
+"$.median_distance_km") AS median_distance_km,
+JSON_EXTRACT(event_info,
+"$.median_speed_knots") AS median_speed_knots,
+SPLIT(event_id, ".")[ORDINAL(1)] AS event,
+CAST (event_start AS DATE) event_date,
+EXTRACT(YEAR FROM event_start) AS year
+FROM
+`world-fishing-827.pipe_production_v20190502.published_events_encounters`
+WHERE
+event_start >= TIMESTAMP("2019-03-01")
+AND event_end <= TIMESTAMP("2019-11-30")
+AND lat_mean < -9
+AND lat_mean > - 28
+AND lon_mean < 50
+AND lon_mean > 32),
+
+#####
+
+  --grab daily information on ssvid corresponding to vessel_id
+
+ssvid_map AS (
+SELECT
+vessel_id,
+ssvid,
+day
+FROM
+`world-fishing-827.pipe_production_v20190502.segment_vessel_daily_2019*`),
+###
+# encounters with ssvid
+###
+
+ -- Join the encounters data with the ssvid data on the same vessel_id and event day to ensure correct SSVID
+encounter_ssvid AS (
+SELECT * EXCEPT(vessel_id)
+FROM (
+SELECT
+*
+FROM
+encounters) a
+JOIN (
+SELECT *
+FROM
+ssvid_map) b
+ON a.vessel_id = b.vessel_id AND
+a.event_date = b.day)
+
+--
+SELECT
+*
+FROM
+encounter_ssvid
+```
+
+
+
+```{sql connection = con, output.var = "carrier_encounters_updated", echo = TRUE, eval = TRUE}
+  -- Expanding on initial encounter query to specify carrier encounters
+  -- Hannah Linder, September 18, 2019
+  --
+  -- This query can be used to get ssvid values (generally called MMSIs) matched to the encounter data, specifing both time and lat/lon range
+  -- Then this query identifies carrier encounters and the associated encountered vessel (neighbor)
+  ####
+  -- Retrieve initial encounter data, specifing time range and lat/lon
+  -- JSON_EXTRACT is used to seperate the listed event_info data of interest into separate columns
+  WITH encounters AS (
+  SELECT
+    event_id,
+    vessel_id,
+    event_start,
+    event_end,
+    lat_mean,
+    lon_mean,
+    JSON_EXTRACT(event_info, "$.median_distance_km") AS median_distance_km,
+    JSON_EXTRACT(event_info, "$.median_speed_knots") AS median_speed_knots,
+    SPLIT(event_id, ".")[ORDINAL(1)] AS event,
+    CAST (event_start AS DATE) event_date,
+    EXTRACT(YEAR
+    FROM
+      event_start) AS year
+  FROM
+    `world-fishing-827.pipe_production_v20190502.published_events_encounters`
+  WHERE
+    event_start >= TIMESTAMP("2019-03-01")
+    AND event_end <= TIMESTAMP("2019-11-30")
+    AND lat_mean < 90
+    AND lat_mean > -90
+    AND lon_mean < 180
+    AND lon_mean > -180),
+  #####
+  --grab daily information on ssvid corresponding to vessel_id
+  ssvid_map AS (
+  SELECT
+    vessel_id,
+    ssvid,
+    day
+  FROM
+    `world-fishing-827.pipe_production_v20190502.segment_vessel_daily_2019*`),
+  ###
+  # encounters with ssvid
+  ###
+  -- Join the encounters data with the ssvid data on the same vessel_id and event day to ensure correct SSVID
+  encounter_ssvid AS (
+  SELECT
+    * EXCEPT(vessel_id)
+  FROM (
+    SELECT
+      *
+    FROM
+      encounters) a
+  JOIN (
+    SELECT
+      *
+    FROM
+      ssvid_map) b
+  ON
+    a.vessel_id = b.vessel_id
+    AND a.event_date = b.day),
+  #####
+  ---create curated carrier list
+  carrier_vessels AS (
+  SELECT
+    identity.ssvid AS carrier_ssvid,
+    identity.n_shipname,
+    identity.n_callsign,
+    identity.imo,
+    identity.flag,
+    feature.geartype,
+    a.first_timestamp AS carrier_first_timestamp,
+    a.last_timestamp AS carrier_last_timestamp,
+    is_fishing,
+    is_carrier
+  FROM
+    `vessel_database.all_vessels_v20190901`,
+    UNNEST(registry),
+    unNEST(activity)a
+  WHERE
+    confidence = 3
+    AND is_carrier
+    AND a.last_timestamp >= TIMESTAMP("2019-03-01")
+    AND a.first_timestamp <= TIMESTAMP("2019-11-30") ),
+  ###
+  --Identify encounters with carriers
+  encounters_carriers AS(
+  SELECT
+    *
+  FROM (
+    SELECT
+      *
+    FROM
+      encounter_ssvid)a
+  JOIN (
+    SELECT
+      *
+    FROM
+      carrier_vessels)b
+  ON
+    a.ssvid=SAFE_CAST(b.carrier_ssvid AS STRING)
+    AND a.event_start BETWEEN b.carrier_first_timestamp
+    AND b.carrier_last_timestamp
+    AND a.event_end BETWEEN b.carrier_first_timestamp
+    AND b.carrier_last_timestamp)
+  ####
+  --Join vessel the carrier encountered
+SELECT
+  carrier_ssvid,
+  neighbor_ssvid,
+  event_start,
+  event_end,
+  lat_mean AS mean_lat,
+  lon_mean AS mean_lon,
+  median_distance_km,
+  median_speed_knots,
+  (TIMESTAMP_DIFF(event_end,
+      event_start,
+      minute)/60) event_duration_hr,
+  a.event AS event,
+  event_date
+FROM (
+  SELECT
+    *
+  FROM
+    encounters_carriers) a
+JOIN (
+  SELECT
+    ssvid AS neighbor_ssvid,
+    event
+  FROM
+    encounter_ssvid) b
+ON
+  a.event = b.event
+WHERE
+  carrier_ssvid != neighbor_ssvid
+GROUP BY
+  1,2,3,4,5,6,7,8,9,10,11
+```
+
+
+
+
+
+
+
+```{r}
+
+test = all_fishing_by_vessel %>%
+  left_join(carrier_encounters_updated, by = c("ssvid" = "neighbor_ssvid"))
+
+```
+
+
+
+
+
+
+##################
+
+SAR ANALYSIS
+
+##################
+
+
+coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10))
+
+
+Pull non-stationary SAR detections for our region of interest, save to Github
+
+```{sql connection = con, output.var = "sar_detections", echo = TRUE, eval = TRUE}
+#standardsql
+SELECT
+*
+FROM
+`gfw_research_precursors.sar_matched_and_predicted_v20190523`
+WHERE
+    matched_to_stationary is FALSE
+    AND on_fishing_list_best is TRUE
+    AND lat < -10
+    AND lat > -27
+    AND lon < 45
+    AND lon > 32
+```
+```{r}
+  write.csv(sar_detections, file = "../data/sar_detections.csv", row.names = FALSE )
+```
+
+
+```{sql connection = con, output.var = "sar_detections_unmatched", echo = TRUE, eval = TRUE}
+#standardsql
+SELECT
+*
+FROM
+`gfw_research_precursors.sar_matched_and_predicted_v20190523`
+WHERE
+    matched_to_stationary is FALSE
+    AND on_fishing_list_best is FALSE
+    AND lat < -10
+    AND lat > -27
+    AND lon < 45
+    AND lon > 32
+```
+```{r}
+  write.csv(sar_detections_unmatched, file = "../data/sar_detections_unmatched.csv", row.names = FALSE )
+```
+
+
+Plot SAR detections of fishing vessels
+
+```{r}
+# Convert data to sf format
+ sar_sf_point <- sf::st_as_sf(x = sar_detections,
+                         coords = c("lon", "lat"),
+                         crs = sf::st_crs(land_sf)) %>%
+   sf::st_cast("POINT")
+
+# bounding box for detections
+bbox <- sf::st_bbox(sar_sf_point)
+
+sarPlot <- ggplot() +
+   geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+    geom_sf(
+      data = land_sf,
+      fill = "#F6F6F4", # colors pulled from Mapbox Light
+      color = "#B4B4B4",
+      size = 0.1
+    ) +
+    geom_sf(data = eez_shp, fill = NA
+          ) +
+    geom_sf(
+      data = sar_sf_point,
+      aes(color = as.factor(best_vessel_class)), # convert to factor
+      size = 0.4,
+      show.legend = "point"
+    ) +
+          coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10) 
+    ) +
+   scale_color_manual("Vessel class",
+      values = c(
+        "black", "#204280", "#3b9088", "#ad2176", # other ways to do this, but this was simple
+        "#d73b68", "#ee6256", "#f68d4b", # colors drawn from GFW style guide
+        "#f8ba47", "#ebe55d", "#7277a4", # though may not be ideal
+        "#9d74a6", "#c77ca1", "#f59e8b"
+      ),
+      # labels = c(
+      #   "Jan", "Feb", "Mar",
+      #   "Apr", "May", "Jun",
+      #   "Jul", "Aug", "Sep",
+      #   "Oct", "Nov", "Dec"
+      # )
+     ) +
+    ggtitle("SAR detections of fishing vessels") +
+    ggplot2::theme_minimal() + # pasted source code for gfw_map_theme since just calling gfw_map_theme() causes an error
+    ggplot2::theme(
+      panel.border = element_blank(),
+      panel.background = element_rect(fill = "#C9D2D3", color = NA), # pulled from Mapbox Light
+      panel.grid.major = element_line(color = "#C9D2D3"),
+      panel.grid.minor = element_line(color = "#C9D2D3"),
+      legend.position = "right",
+      legend.box = "vertical",
+      legend.title.align = 0,
+      legend.text = element_text(
+        family = "Roboto",
+        color = "#848B9B",
+        size = 8
+      ),
+      legend.title = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 8
+      ),
+      plot.title = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 10
+      ),
+      plot.subtitle = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 10
+      ),
+      legend.key.size = unit(5, "mm"),
+      axis.title = element_blank()
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 2))) +
+    # add GFW logo in bottom right
+    annotation_custom(gfw_logo_rast,
+                      ymin = -29,
+                      ymax = -24,
+                      xmin = 38.5,
+                      xmax = 45.5) 
+  #   annotate(geom = "text", x = -38, y = -52.5, label = paste("Activity near", 
+  #          "South Georgia Island", 
+  #          "" ,sep="\n"), 
+  #           color = "black",
+  #          family = "Roboto",
+  #           size = 3)  +
+
+sarPlot
+
+ggsave('../figures/moz-sar-matched.png',
+                    sarPlot,
+                   width = 5, height = 6, dpi = 600)
+
+
+```
+
+
+Plot SAR detections of vessels not matched to 
+
+```{r}
+# Convert data to sf format
+
+sar_detections_unknown = sar_detections_unmatched %>%
+  filter(best_vessel_class == "None")
+
+ sar_sf_point <- sf::st_as_sf(x = sar_detections_unknown,
+                         coords = c("lon", "lat"),
+                         crs = sf::st_crs(land_sf)) %>%
+   sf::st_cast("POINT")
+
+# bounding box for detections
+bbox <- sf::st_bbox(sar_sf_point)
+
+sarPlot <- ggplot() +
+   geom_sf(
+      data = sar_sf_point,
+      aes(color = as.factor(best_vessel_class)),
+      size = 0.4,
+      show.legend = "point"
+    ) +
+   geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+    geom_sf(
+      data = land_sf,
+      fill = "#F6F6F4", # colors pulled from Mapbox Light
+      color = "#B4B4B4",
+      size = 0.1
+    ) +
+    geom_sf(data = eez_shp, fill = NA
+          ) +
+     coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10) 
+    ) +
+   scale_color_manual("Vessel class",
+      values = c(
+        "#204280"
+      ),
+   labels = c(
+     "Unknown"
+   )
+     ) +
+    ggtitle("SAR detections of unknown vessels") +
+    ggplot2::theme_minimal() + # pasted source code for gfw_map_theme since just calling gfw_map_theme() causes an error
+    ggplot2::theme(
+      panel.border = element_blank(),
+      panel.background = element_rect(fill = "#C9D2D3", color = NA), # pulled from Mapbox Light
+      panel.grid.major = element_line(color = "#C9D2D3"),
+      panel.grid.minor = element_line(color = "#C9D2D3"),
+      legend.position = "right",
+      legend.box = "vertical",
+      legend.title.align = 0,
+      legend.text = element_text(
+        family = "Roboto",
+        color = "#848B9B",
+        size = 8
+      ),
+      legend.title = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 8
+      ),
+      plot.title = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 10
+      ),
+      plot.subtitle = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 10
+      ),
+      legend.key.size = unit(5, "mm"),
+      axis.title = element_blank()
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 2))) +
+    # add GFW logo in bottom right
+    annotation_custom(gfw_logo_rast,
+                      ymin = -29,
+                      ymax = -24,
+                      xmin = 38.5,
+                      xmax = 45.5) 
+
+sarPlot
+
+ggsave('../figures/moz-sar-not-matched.png',
+                    sarPlot,
+                   width = 5, height = 6, dpi = 600)
+
+
+```
+
+
+
+
+
+
+```{sql connection = con, output.var = "sar_detections_gridded", echo = TRUE, eval = TRUE}
+##################################
+-- Jan 2020, David Kroodsma
+-- Density of likely vessels from sentinel-1 detections at 0.1 degree resolution
+-- This query removes likely fixed infrastructure and divides each 
+-- detection by the number of overpasses. Uncomment the last few lines
+-- to get only likely fishing vessels based on AIS and a random forest model that
+-- guesses the likelihood that it is a fishing vessel based on where in the ocean
+-- it is.
+##################################
+
+
+with
+
+detection_table AS (
+  SELECT
+    *
+  FROM
+    `world-fishing-827.gfw_research.sar_ds3_fmean250_e10_d70_s20_8xmean_ns`
+  WHERE
+    _partitiontime BETWEEN TIMESTAMP("2019-03-01")
+    AND TIMESTAMP("2019-11-30")
+    AND lat < -10
+    AND lat > -27
+    AND lon < 45
+    AND lon > 32
+ ),
+--
+--
+repeats as (
+select a.detect_id detect_id, count(*) repeats
+from gfw_research.sar_ds3_fmean250_e10_d70_s20_8xmean_ns a
+cross join detection_table b
+where  
+ _partitiontime between timestamp('2016-01-01') and timestamp("2018-12-31")
+and not a.infrastructure 
+and a.detect_id != b.detect_id
+and st_distance(ST_GEOGPOINT(a.lon, a.lat),ST_GEOGPOINT(b.lon, b.lat))< 100
+group by detect_id
+having repeats > 1),
+--
+--
+--
+
+    --
+    --
+    --
+  infastructure_table AS (
+  SELECT
+    lon,
+    lat
+  FROM
+    `world-fishing-827.scratch_brian.offshore_infra_v20190605_asc`
+  UNION ALL
+  SELECT
+    lon,
+    lat
+  FROM
+    `world-fishing-827.scratch_brian.offshore_infra_v20190605_desc`),
+    --
+    --
+    --
+  infrastructre_distances AS (
+  SELECT
+    detect_id,
+    MIN( st_distance(ST_GEOGPOINT(a.lon,
+          a.lat),
+        ST_GEOGPOINT(b.lon,
+          b.lat))) dist_to_infrastructure
+  FROM
+    detection_table a
+  CROSS JOIN
+    infastructure_table b
+  WHERE
+    ABS(a.lat-b.lat)<1
+    AND st_distance(ST_GEOGPOINT(a.lon,
+        a.lat),
+      ST_GEOGPOINT(b.lon,
+        b.lat)) < 1000
+  GROUP BY
+    detect_id),
+    
+    
+detections_categorized as (   
+SELECT
+  detect_id,
+  ssvid,
+  lat,
+  lon,
+  detection_time,
+  infrastructure,
+IF
+  (dist_to_infrastructure IS NULL,
+    1000,
+    dist_to_infrastructure) dist_to_infrastructure,
+  is_fishing_global,
+  is_fishing_global*rand() is_fishing_global_r,
+  is_fishing_eu,
+  is_fishing_eu*rand() is_fishing_eu_r,
+  is_fishing_non_eu,
+  is_fishing_non_eu*rand() is_fishing_non_eu_r,
+  best.best_vessel_class,
+  best.best_flag,
+  on_fishing_list_best,
+  ifnull(repeats.repeats, 0) repeats
+FROM
+  detection_table
+LEFT JOIN
+  `gfw_research.vi_ssvid_v20190430`
+USING
+  (ssvid)
+LEFT JOIN
+  infrastructre_distances
+USING
+  (detect_id)
+left join
+repeats
+  using(detect_id)),
+  
+  
+  overpasses as 
+  
+  (
+  select lat_bin, lon_bin, sum(overpasses) overpasses from 
+  `world-fishing-827.gfw_research_precursors.sentinel_1_footprints_500m_byyear_v20191117`
+  where year in (2019) 
+  group by lat_bin, lon_bin
+  )
+  
+  
+  
+select floor(lat*10) lat_bin, floor(lon*10) lon_bin,
+sum(1/overpasses) vessel_detection_per_overpass,
+count(*) total_vessel_detections
+from detections_categorized a
+join  overpasses b
+on floor(lat*200) = lat_bin and floor(lon*200) = lon_bin
+where 
+repeats < 2
+and overpasses > 30
+and dist_to_infrastructure > 500 # more than 500m from infrastructure
+-- uncomment the below if you want *just* likely fishing vessels
+and ((is_fishing_eu_r>.25 and (on_fishing_list_best=False or on_fishing_list_best is null))
+or on_fishing_list_best)
+group by lat_bin, lon_bin
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+sar_detections_gridded = sar_detections_gridded %>% 
+  mutate(lat_bin = lat_bin/10,
+         lon_bin = lon_bin/10)
+
+
+
+# Map the gaps
+
+sarPlot = ggplot() +
+  geom_raster(data = sar_detections_gridded,
+             aes(x = lon_bin,
+                 y = lat_bin,
+                 fill = log10(total_vessel_detections))
+    ) +
+     geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+    geom_sf(
+      data = land_sf,
+      fill = "#F6F6F4", # colors pulled from Mapbox Light
+      color = "#B4B4B4",
+      size = 0.1
+    ) +
+    geom_sf(data = eez_shp, fill = NA
+          ) +
+      coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10)
+      )+
+   scale_fill_gradientn("Total detections",
+                         colours = effort_pal(5),
+                        limits = c(0, 2),
+                        labels = c("1","10",">100"),
+                        breaks = c(0,1,2),
+                        values = scales::rescale(c(0, 1))) +
+  labs(title = "SAR detections of likely fishing vessels") +
+#  guides(fill = guide_colourbar(barwidth = 1)) +
+  theme_gfw_map() +
+  guides(fill = guide_colourbar(barwidth = 10)) +   # change width of scale bar for narrow maps
+  annotation_custom(gfw_logo_rast,
+                      ymin = -29,
+                      ymax = -24,
+                      xmin = 38.5,
+                      xmax = 45.5) 
+
+sarPlot
+
+ggsave('../figures/moz-sar-likely-fishing-gridded.png',
+                    sarPlot,
+                   width = 5, height = 6, dpi = 600)
+
+```
+
+
+
+
+
+
+
+##########################
+
+
+
+
+LOITERING ANALYSIS
+
+
+
+
+##########################
+
+
+
+
+
+
+
+
+
+
+```{sql connection = con, output.var = "loitering_events", echo = TRUE, eval = TRUE}
+
+#standardSQL
+  -- Identifying loitering events of interest
+  -- Hannah Linder, January 23,2020
+  --
+  -- Loitering events, specifying duration, location, and time range of events
+
+
+#####
+---create curated carrier list
+WITH  carrier_vessels AS (
+SELECT
+ identity.ssvid AS carrier_ssvid,
+ identity.imo AS carrier_imo_ais,
+ identity.n_shipname AS carrier_shipname_ais,
+ identity.n_callsign AS carrier_callsign_ais,
+ identity.flag AS carrier_flag,
+ first_timestamp AS carrier_first_timestamp,
+ last_timestamp AS carrier_last_timestamp,
+FROM
+`world-fishing-827.vessel_database.all_vessels_v20200101`,
+UNNEST(registry),
+UNNEST(activity)
+WHERE is_carrier AND
+confidence = 3 AND
+identity.ssvid NOT IN ('111111111','0','888888888','416202700')
+AND
+first_timestamp<=timestamp('2019-03-01')
+AND
+last_timestamp>=timestamp('2019-11-30')
+GROUP BY 1,2,3,4,5,6,7),
+
+####
+
+ --Search for only carrier vessels in loitering table, specifying lat,lon, time, and minimum duration of event
+ --Note the ST_CENTROID function calculated the the lat/lon between the start and end lat/lon values
+ --Note that I specify distance from shore, minimum loitering duration, and ensure the segments are considered 'good' aka less noisy
+
+ loitering as(
+ SELECT
+ *
+ FROM(
+ SELECT
+vessel_id,
+loitering_start_timestamp,
+  loitering_end_timestamp,
+  loitering_hours,
+  tot_distance_nm,
+  avg_speed_knots,
+  avg_distance_from_shore_nm,
+  start_lon,
+  start_lat,
+  end_lon,
+  end_lat,
+   ST_X(centroid) as mean_lon,
+   ST_Y(centroid) as mean_lat
+FROM(
+SELECT
+  ssvid as vessel_id,
+  loitering_start_timestamp,
+  loitering_end_timestamp,
+  loitering_hours,
+  tot_distance_nm,
+  avg_speed_knots,
+  avg_distance_from_shore_nm,
+  start_lon,
+  start_lat,
+  end_lon,
+  end_lat,
+  ST_CENTROID( ST_UNION(ST_GEOGPOINT(start_lon,
+          start_lat),
+        ST_GEOGPOINT(end_lon,
+          end_lat)) ) centroid
+FROM
+  `gfw_research.loitering_events_v20200106`
+WHERE
+ssvid IN (SELECT
+carrier_ssvid
+FROM
+carrier_vessels) AND
+loitering_start_timestamp >= timestamp("2019-03-01") AND
+loitering_end_timestamp <= timestamp("2019-11-30") AND
+avg_distance_from_shore_nm > 20 AND
+loitering_hours>=4
+AND
+seg_id IN (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg))
+    GROUP BY
+    vessel_id,
+  loitering_start_timestamp,
+  loitering_end_timestamp,
+  loitering_hours,
+  tot_distance_nm,
+  avg_speed_knots,
+  avg_distance_from_shore_nm,
+  start_lon,
+  start_lat,
+  end_lon,
+  end_lat,
+  mean_lon,
+  mean_lat
+ )
+ WHERE
+ mean_lat>=-27
+          AND
+          mean_lat<=-10
+          AND
+          mean_lon<=45
+          AND
+          mean_lon>=32
+ )
+
+SELECT
+vessel_id,
+start_lat,
+start_lon,
+end_lat,
+end_lon,
+  mean_lon,
+  mean_lat,
+loitering_start_timestamp,
+  loitering_end_timestamp,
+  loitering_hours,
+  tot_distance_nm,
+  avg_speed_knots,
+  avg_distance_from_shore_nm
+FROM(
+SELECT *
+FROM loitering
+)a
+JOIN(
+SELECT
+carrier_ssvid,
+carrier_first_timestamp,
+carrier_last_timestamp
+FROM
+carrier_vessels)b
+ON
+SAFE_CAST(a.vessel_id as STRING)=SAFE_CAST(b.carrier_ssvid as STRING)
+AND
+a.loitering_start_timestamp BETWEEN b.carrier_first_timestamp AND b.carrier_last_timestamp
+AND
+a.loitering_end_timestamp BETWEEN b.carrier_first_timestamp and b.carrier_last_timestamp
+
+
+```
+
+
+
+
+
+Plot loitering events
+
+
+```{r}
+# Convert data to sf format
+loitering_events_point = sf::st_as_sf(x = loitering_events,
+                         coords = c("mean_lon", "mean_lat"),
+                         crs = sf::st_crs(land_sf)) %>%
+   sf::st_cast("POINT")
+
+
+loiterPlot <- ggplot() +
+   geom_sf(
+      data = loitering_events_point,
+      aes(color = "red"),
+      size = 1.5,
+      show.legend = "point"
+    ) +
+   geom_sf(data = NM12_shp,
+    color = '#ad2176',
+    alpha = 0.2,
+    fill = NA,
+    size = 0.4) +
+    geom_sf(
+      data = land_sf,
+      fill = "#F6F6F4", # colors pulled from Mapbox Light
+      color = "#B4B4B4",
+      size = 0.1
+    ) +
+    geom_sf(data = eez_shp, fill = NA
+          ) +
+     coord_sf(xlim = c(32, 45),
+               ylim = c(-27, -10) 
+    ) +
+   scale_color_manual("Loitering events",
+      values = c(
+        "#204280"
+      ),
+   labels = c(
+     ""
+   )
+     ) +
+    ggtitle("Loitering events of carrier vessels") +
+    ggplot2::theme_minimal() + # pasted source code for gfw_map_theme since just calling gfw_map_theme() causes an error
+    ggplot2::theme(
+      panel.border = element_blank(),
+      panel.background = element_rect(fill = "#C9D2D3", color = NA), # pulled from Mapbox Light
+      panel.grid.major = element_line(color = "#C9D2D3"),
+      panel.grid.minor = element_line(color = "#C9D2D3"),
+      legend.position = "right",
+      legend.box = "vertical",
+      legend.title.align = 0,
+      legend.text = element_text(
+        family = "Roboto",
+        color = "#848B9B",
+        size = 8
+      ),
+      legend.title = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 8
+      ),
+      plot.title = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 10
+      ),
+      plot.subtitle = element_text(
+        family = "Roboto",
+        color = "#363C4C",
+        size = 10
+      ),
+      legend.key.size = unit(5, "mm"),
+      axis.title = element_blank()
+    ) +
+    guides(color = guide_legend(override.aes = list(size = 2))) 
+# +
+#     # add GFW logo in bottom right
+#     annotation_custom(gfw_logo_rast,
+#                       ymin = -15,
+#                       ymax = -10,
+#                       xmin = 38.5,
+#                       xmax = 45.5) 
+
+loiterPlot
+
+ggsave('../figures/moz-loitering.png',
+                    loiterPlot,
+                   width = 5, height = 6, dpi = 600)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+This query uses pipe_v20190502 instead of pipe_v20190502_fishing. As a result, it's a much larger query. I'm comparing results to see if I can use pipe_v20190502_fishing, or if the results are dramatically different.
+
+<!-- ```{sql connection = con, output.var = "daily_fishing_locations_mozonly_pipeall", echo = TRUE, eval = TRUE} -->
+<!-- WITH -->
+
+<!-- -- This subquery identifies good segments -->
+<!--   good_segments AS ( -->
+<!--   SELECT -->
+<!--     seg_id -->
+<!--   FROM -->
+<!--     `gfw_research.pipe_v20190502_segs` -->
+<!--   WHERE -->
+<!--     good_seg -->
+<!--     AND positions > 10 -->
+<!--     AND NOT overlapping_and_short), -->
+
+<!--   vessels AS ( -->
+<!--   SELECT -->
+<!--     ssvid -->
+<!--   FROM -->
+<!--     `scratch_stanford.moz_licenses` -->
+<!--   ), -->
+
+<!--   ##################################################################### -->
+<!--   # This subquery fishing query gets all fishing on November 20th, 2018 -->
+<!--   fishing AS ( -->
+<!--     SELECT -->
+<!--     date, -->
+<!--     lat_bin, -->
+<!--     lon_bin, -->
+<!--     SUM(fishing_hours) as fishing_hours -->
+<!--     FROM( -->
+<!--       SELECT -->
+<!--       ssvid, -->
+<!--       # Assign lat/lon bins at desired resolution (here 0.1 degree) -->
+<!--       FLOOR(lat / 0.25) * 0.25 as lat_bin, -->
+<!--       FLOOR(lon / 0.25) * 0.25 as lon_bin, -->
+<!--       nnet_score, -->
+<!--       timestamp, -->
+<!--       EXTRACT(date FROM date) as date, -->
+<!--       hours, -->
+<!--       # Calculate fishing hours by evaluating neural net score -->
+<!--       IF(nnet_score > 0.5, hours, 0) as fishing_hours -->
+<!--       FROM -->
+<!--         # Query the _fishing table to reduce query size -->
+<!--         `gfw_research.pipe_v20190502` -->
+<!--       WHERE  -->
+<!--       date >= "2018-01-01" -->
+<!--       AND date <= "2018-01-03" -->
+<!--       AND seg_id IN ( -->
+<!--         SELECT -->
+<!--           seg_id -->
+<!--         FROM -->
+<!--           good_segments) -->
+<!--        AND ssvid IN ( -->
+<!--         SELECT -->
+<!--            CAST(ssvid AS STRING) AS ssvid -->
+<!--         FROM -->
+<!--           vessels) -->
+<!--       ) -->
+<!--     GROUP BY date, lat_bin, lon_bin) -->
+
+<!-- ##################### -->
+<!-- # Return fishing data -->
+<!-- SELECT * -->
+<!-- FROM fishing -->
+<!-- ``` -->
+
+
+
+
+
+
+Calculate monthly fishing effort sums for the Mozambique EEZ
+
+```{r, fig.width=5, fig.height=2}
+fishing_nn_monthly <- fishing_nn %>%
+    mutate(month = format(date, '%m'),
+           year = format(date, '%Y'),
+           mon_year = paste0(month,'-',year)) %>%
+    group_by(mon_year) %>%
+    summarize(total_fishing_hours = sum(fishing_hours, na.rm = TRUE)) %>%
+    ungroup()
+fishing_nn_monthly
+
+readr::write_csv(x = fishing_nn_monthly, path = '../data/monthly_fishinghours_201214.csv')
+
+```
+
+
+THIS QUERY DIDN'T WORK BECAUSE IT DUPLICATED ROWS. The issue was the left join with vessel info since there's not 1 row per vessel (some vessles have multiple rows)
+
+
+<!-- WITH -->
+<!-- -- This subquery identifies good segments -->
+<!--   good_segments AS ( -->
+<!--   SELECT -->
+<!--     seg_id -->
+<!--   FROM -->
+<!--     `gfw_research.pipe_v20190502_segs` -->
+<!--   WHERE -->
+<!--     good_seg -->
+<!--     AND positions > 10 -->
+<!--     AND NOT overlapping_and_short), -->
+
+<!-- --   This subquery fishing query gets gridded daily fishing effort of target vessels -->
+<!--   fishing AS ( -->
+<!--     SELECT -->
+<!--     ssvid, -->
+<!--     date, -->
+<!--     lat_bin, -->
+<!--     lon_bin, -->
+<!--     SUM(fishing_hours) as fishing_hours -->
+<!--     FROM( -->
+<!--       SELECT -->
+<!--       ssvid, -->
+<!--       FLOOR(lat / 0.1) * 0.1 as lat_bin, -->
+<!--       FLOOR(lon / 0.1) * 0.1 as lon_bin, -->
+<!--       nnet_score2, -->
+<!--       timestamp, -->
+<!--       EXTRACT(date FROM date) as date, -->
+<!--       hours, -->
+<!--       IF -->
+<!--     (ARRAY_LENGTH(regions.eez)> 0, -->
+<!--       regions.eez[ORDINAL(1)], -->
+<!--       NULL) AS eez, -->
+<!--       # Calculate fishing hours by evaluating neural net score -->
+<!--       IF(nnet_score2 > 0.5, hours, 0) as fishing_hours -->
+<!--       FROM -->
+<!--         # Query the _fishing table to reduce query size -->
+<!--         `gfw_research.pipe_v20190502_fishing` -->
+<!--       WHERE  -->
+<!--       date >= "2019-03-01" -->
+<!--       AND date <= "2019-11-30" -->
+<!--       AND "8347" in unNEST(regions.eez)   -- only query effort in Momambique EEZ -->
+<!--       AND seg_id IN ( -->
+<!--         SELECT -->
+<!--           seg_id -->
+<!--         FROM -->
+<!--           good_segments) -->
+
+<!--       ) -->
+<!--     GROUP BY ssvid, date, lat_bin, lon_bin), -->
+
+<!-- vessel_info AS ( -->
+
+<!-- SELECT * FROM fishing -->
+
+<!-- LEFT JOIN -->
+<!--   ( -->
+<!--   SELECT -->
+<!--    CAST(ssvid as STRING) ssvid, -->
+<!--    n_shipname_ais as shipname, -->
+<!--    flag, -->
+<!--    geartype, -->
+<!--    geartype_original, -->
+<!--    authorized_from, -->
+<!--    authorized_to, -->
+
+<!--   FROM -->
+<!--     `scratch_stanford.moz_licenses` -->
+<!--     ) -->
+<!--     USING(ssvid) -->
+<!--    ) -->
+
+<!-- ##################### -->
+<!-- # Return fishing data -->
+<!-- SELECT * -->
+<!-- FROM vessel_info -->
+
+
+WITH
+
+
+  -- This subquery identifies good segments
+  good_segments AS (
+  SELECT
+    seg_id
+  FROM
+    `gfw_research.pipe_v20190502_segs`
+  WHERE
+    good_seg
+    AND positions > 10
+    AND NOT overlapping_and_short),
+    
+    
+  --   This subquery fishing query gets gridded daily fishing effort of target vessels
+  fishing AS (
+  SELECT
+    ssvid,
+    date,
+    lat_bin,
+    lon_bin,
+    SUM(fishing_hours) AS fishing_hours
+  FROM (
+    SELECT
+      ssvid,
+      FLOOR(lat / 0.1) * 0.1 AS lat_bin,
+      FLOOR(lon / 0.1) * 0.1 AS lon_bin,
+      nnet_score2,
+      timestamp,
+      EXTRACT(date
+      FROM
+        date) AS date,
+      hours,
+    IF
+      (ARRAY_LENGTH(regions.eez)> 0,
+        regions.eez[ORDINAL(1)],
+        NULL) AS eez,
+      # Calculate fishing hours by evaluating neural net score
+    IF
+      (nnet_score2 > 0.5,
+        hours,
+        0) AS fishing_hours
+    FROM
+      # Query the _fishing table to reduce query size
+      `gfw_research.pipe_v20190502_fishing`
+    WHERE
+      date >= "2019-03-01"
+      AND date <= "2019-03-30"
+      AND "8347" IN UNNEST(regions.eez)   -- only query effort in Momambique EEZ
+      AND seg_id IN (
+      SELECT
+        seg_id
+      FROM
+        good_segments) )
+  GROUP BY
+    ssvid,
+    date,
+    lat_bin,
+    lon_bin),
+    
+-- Pull vessel info 
+  vessel_info AS (
+  SELECT
+    ssvid,
+    best.best_flag as flag,
+    ais_identity.n_shipname_mostcommon.value AS shipname,
+    registry_info.best_known_vessel_class,
+    best.best_vessel_class AS geartype,
+  FROM
+    `world-fishing-827.gfw_research.vi_ssvid_v20190430`
+ )
+ 
+ 
+  #####################
+  # Return fishing data
+  # NEED TO ADD A JOIN HERE
+  
+SELECT
+  *
+FROM
+  fishing
+ LEFT JOIN
+  vessel_info
+  USING
+  (ssvid)
+ORDER BY
+  fishing_hours DESC
