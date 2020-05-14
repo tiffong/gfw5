@@ -466,14 +466,87 @@ leaflet() %>%
 ```
 
 
-
 ```{r}
-  write.csv(daily_fishing_locations_allvessels, file = "../data/2019_allvessel_daily_effort.csv", row.names = FALSE )
+
+mpa_monthly_totals %>%
+  filter(mpa_monthly_totals)
+str(mpa_monthly_totals[[1]])
+  
+
+filelist <- mapply(cbind, mpa_monthly_totals, "SampleID"=ID, SIMPLIFY=F)
+
+
+nameVec = names(mpa_monthly_totals)
+
+for(i in 1:length(nameVec)){
+  testmpa_monthly_totals[[nameVec[i]]]$mpa = nameVec[i]
+  return(mpa_monthly_totals[[i]][1:12,])
+}
+
+
+mean(mpa_monthly_totals[[1]][1:12,"fishing_effort"], na.rm = T)
+mean(mpa_monthly_totals[[2]][1:12,"fishing_effort"], na.rm = T)
+
+#PAPA
+mean(mpa_monthly_totals[[3]][1:12,"fishing_effort"], na.rm = T)
+mean(mpa_monthly_totals[[3]][13:24,"fishing_effort"], na.rm = T)
+
+mean(mpa_monthly_totals[[4]][1:12,"fishing_effort"], na.rm = T)
+mean(mpa_monthly_totals[[5]][1:12,"fishing_effort"], na.rm = T)
+
+mean(c(0.07025463,4.694757,41.04339,1.968727))
+
+
+mean()
+
+
+test2 = do.call("rbind",mpa_monthly_totals)
+
+first_12_only = test2 %>%
+  filter(mpa %in% c("Nazca","Pacific Remote Islands","Papa","Pitcairn" )) %>%
+  group_by(mpa) %>%
+  mutate(month = row_number()) %>%
+  filter(month < 13) %>%
+#  mutate(mean = mean(fishing_effort, na.rm = T)) %>%
+  summarise_at(vars(fishing_effort),funs(mean(.,na.rm = TRUE)))
+
+overall_mean = mean(first_12_only$fishing_effort)
+
+%>%
+  mean(fishing_effort, )
+
+mpa_monthly_totals
+
+lapplyTest = lapply(mpa_monthly_totals, `[[`, 2, [1:12])
+
+lapplyTest = lapply(mpa_monthly_totals, `[[`, 2)
+lapplyTest
+
+lapplyTest
+mpa_monthly_totals[[1]][2]
+
+
+
 ```
 
+
+
+
+
+
+GDP estimates
+
 ```{r}
-daily_fishing_locations_allvessels = read.csv(file = "../data/2019_allvessel_daily_effort.csv",header = T)
+
+gdp_kir = 180000000
+gdp_usa = 
 ```
+
+
+
+
+
+
 
 
 Map all effort in Mozambique EEZ
