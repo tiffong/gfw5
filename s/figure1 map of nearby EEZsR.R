@@ -30,6 +30,7 @@ class(NE_countries) # is a SpatialPolygonsDataFrame object
 ##get shapefiles for MPA - TAKES THE MOST TIME - about 2 mins 16 seconds bruh
 mpa <- readOGR(dsn = "/Users/tiffanyong/Desktop/MPA_shapefiles/", layer = "WDPA_June2018_marine-shapefile-polygons")
 
+mpa <- readOGR(dsn = "/Users/timwhite/Desktop/MPA_shapefiles/", layer = "WDPA_June2018_marine-shapefile-polygons")
 
 #get shapefiles for EEZ - TAKES TIME
 eez <- readOGR(dsn = "/Users/tiffanyong/Documents/GitHub/gfw5/data/World_EEZ_v9_20161021_LR/", layer = "eez_lr") # lower res file. too big to fit in Github so its in Dropbox
@@ -38,7 +39,7 @@ eez@data = eez@data[which(is.na(eez@data$Sovereign1) == F),] # remove a single N
 
 #get specific EEZ shapefiles
 #Kiribati Exclusive Economic Zone (Gilbert Islands)
-eez1 = eez[eez@data$GeoName == 'Kiribati Exclusive Economic Zone (Gilbert Islands)', ] 
+eez1 = eez_shp[eez@data$GeoName == 'Kiribati Exclusive Economic Zone (Gilbert Islands)', ] 
 eez2 = eez[eez@data$GeoName ==  'Kiribati Exclusive Economic Zone (Line Islands)', ] 
 eez3 = eez[eez@data$GeoName ==  'United States Exclusive Economic Zone (Hawaii)', ] 
 eez4 = eez[eez@data$GeoName ==  'Chilean Exclusive Economic Zone', ] 

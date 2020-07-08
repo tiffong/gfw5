@@ -1,5 +1,7 @@
 #libraries -----
-setwd('/Users/tiffanyong/Documents/GitHub/gfw4/s')
+#setwd('/Users/tiffanyong/Documents/GitHub/gfw4/s')
+setwd('~/gfw5/s')
+
 library(sf)
 library(mregions)
 library(DBI)
@@ -86,7 +88,7 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
 
   labs(color="EEZ Name") +
   labs(x="Month" ,
-       y=expression("Fishing Hours/1000" ~km^2),
+       y="Fishing Hours",
        title = "Phoenix Islands"
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
@@ -147,7 +149,7 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   
   labs(color="EEZ Name") +
   labs(x="Month", 
-       y=expression("Fishing Hours/1000" ~km^2),
+       y="Fishing Hours",
        title = "Pitcairn Islands"
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
@@ -229,7 +231,7 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   
   labs(color="EEZ Name") +
   labs(x="Month", 
-       y=expression("Fishing Hours/1000" ~km^2) ,
+       y="Fishing Hours",
        title = "Papahānaumokuākea"
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
@@ -286,7 +288,7 @@ ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) +
   
   labs(color="EEZ Name") +
   labs(x="Month", 
-       y=expression("Fishing Hours/1000" ~km^2),
+       y="Fishing Hours",
        title = mpa_name
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
@@ -331,20 +333,28 @@ Rdata_temp = Rdata
 #  Rdata_temp[[i]]$fishing_effort =  Rdata_temp[[i]]$fishing_effort / Area[[i]] * 1000
 #}
 
+# REVISION EDITS
+
+Rdata_temp[[3]]$fishing_effort = c(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) # update to the little Pacman slice
+Rdata_temp[[1]]$fishing_effort = c(102.5,20,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) # update to the Fernandez islands
+
+
+
 plots[[5]] =
   #quartz()
   ggplot(Rdata_temp[[1]], aes(x=c(-12:11), y=fishing_effort, group=1)) + 
-  geom_line(aes(color="Chilean"), size = thick) +
-  geom_line(data=Rdata_temp[[3]], (aes(color="Peruvian")), size = thick) +
+  geom_line(aes(color="Chile (Juan Fernandez Islands)"), size = thick) +
+  geom_line(data=Rdata_temp[[3]], (aes(color="Chile (San Felix & San Ambrosio Islands)")), size = thick) +
   geom_line(data=Rdata_temp[[2]], (aes(color="Nazca")), size = thick+0.2, color = "black") +
   
   labs(color="EEZ Name") +
   labs(x="Month", 
-       y=expression("Fishing Hours/1000" ~km^2),
+       y="Fishing Hours",
        title = mpa_name
        #title = "Monthly Fishing Effort", 
        #subtitle = "Before and After MPA Creation"
   ) +
+  ylim(0,1000) +
   theme(plot.title = element_text(hjust = 0.5)) + #this does nothing
   theme_minimal() +
   geom_vline(aes(xintercept = 0, color='black'), color="black", size=0.5)+
@@ -362,7 +372,7 @@ plots[[5]] =
 #gridarrange----
 #quartz()
 
-png(filename="../Figures/Final_Figures/Figure3WithTitleNOCONTROL.png",
+png(filename="../Figures/Final_Figures/Figure3WithTitleNOCONTROL_revision.png",
     units="in", width=13, height=7, res=300)
 
 figure = ggarrange(plots[[1]],plots[[2]],plots[[3]],plots[[4]],plots[[5]],
